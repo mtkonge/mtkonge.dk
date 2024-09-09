@@ -2,11 +2,10 @@
   margin: 0;
   font-size: 20px;
   font-family: 'Ubuntu Mono', monospace;
-
 }
 
 span {
-  white-space: pre;
+  white-space: pre; /*enable whitespace*/
 }
 
 body {
@@ -26,6 +25,10 @@ body {
   outline: none;
   color: #f5f5f5;
   caret-color: transparent;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 #user {
@@ -40,14 +43,13 @@ body {
   font-weight: bold;
   position: absolute;
   width: 10px; /* should be size of font*/
-  height: 10px; /* should be size of font*/
+  height: 20px; /* should be size of font*/
   animation: blink 1s step-start infinite;
   display: inline-block;
-
 }
 
 @keyframes blink {
   0% { opacity: 1; }
-  45% { opacity: 0; }
-  90% { opacity: 1; }
+  50% { opacity: 0; }
+  100% { opacity: 1; }
 }
