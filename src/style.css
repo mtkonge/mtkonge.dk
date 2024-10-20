@@ -13,13 +13,32 @@ body {
   color: #f5f5f5
 }
 
-#cmd {
+#input-wrapper {
   display: flex;
   font-size: 0;
-  margin-left: 8px
+  margin-left: 8px;
 }
 
-#cmd input {
+.user-and-command {
+  display: flex;
+}
+
+#history {
+  display: flex;
+  flex-direction: column;
+  margin-left: 8px;
+}
+
+.history-item {
+  display: flex;
+}
+
+.user-prefix {
+  display: flex;
+}
+
+#input-wrapper input {
+  text-decoration: none;
   border: none;
   background-color: transparent;
   outline: none;
@@ -29,13 +48,14 @@ body {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  padding: 0;
 }
 
-#user {
+.user {
   color: #00ff00
 }
 
-#dir {
+.dir {
   color: #4488ff
 }
 

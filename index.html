@@ -10,12 +10,17 @@
     <title>Mtkonge</title>
 </head>
 <body>
-    <div id="cmd">
-        <span id="user">guest@mtkonge</span>
-        <span>:</span>
-        <span id="dir">~</span>
-        <span>$ </span>
-        <input id="terminal-input" type="text" autocomplete="off">
+    <div id="history">
+
+    </div>
+    <div id="input-wrapper">
+        <div id="user" class="user-prefix">
+            <span class="user">guest@mtkonge</span>
+            <span>:</span>
+            <span class="dir">~</span>
+            <span>$ </span>
+        </div>
+        <input id="terminal-input" spellcheck="false" type="text" autocomplete="off">
         <span id="cursor">_</span>
     </div>
     <script type="module" src="/src/main.ts" defer></script>
