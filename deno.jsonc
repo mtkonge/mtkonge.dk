@@ -1,0 +1,12 @@
+{
+    "tasks": {
+      "bundle": "deno run --check --allow-read --allow-write --allow-env --allow-run bundle.ts"
+    },
+    "compilerOptions": {
+        "checkJs": false,
+        "lib": ["dom", "dom.iterable", "dom.asynciterable", "deno.ns"]
+    },
+    "fmt": {
+        "indentWidth": 4
+    }
+}
