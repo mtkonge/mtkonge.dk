@@ -11,7 +11,7 @@ const dirElement = document.querySelector<HTMLDivElement>("#dir")!;
 const username = "guest";
 
 input.addEventListener("input", updatePromptAndInput);
-input.addEventListener("keyup", updatePromptAndInput);
+input.addEventListener("keydown", updatePromptAndInput);
 input.addEventListener("focus", showCursor);
 input.addEventListener("blur", hideCursor);
 window.addEventListener("resize", setInputMaxLength);
@@ -27,7 +27,7 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
 });
 
 const root: Dir = {
-    name: "",
+    name: "/",
     children: dirChildren({
         "home": {
             name: "home",
@@ -47,7 +47,7 @@ const root: Dir = {
 reverseOrphanDirTree(root);
 
 const session = new Session(root, username);
-session.cd(`/home/${username}`);
+console.log(session.cd(`/home/${username}`));
 
 function runCommand(command: string): string {
     const args = command.trim().split(" ");
@@ -70,6 +70,37 @@ function runCommand(command: string): string {
             }
 
             return "";
+        }
+        case "mkdir": {
+            if (args.length === 1) {
+                return "mkdir: missing operand";
+            }
+
+            for (const dir of args.slice(1)) {
+                const res = session.mkdir(dir);
+                if (!res.ok) {
+                    return `mkdir: ${res.error}`;
+                }
+            }
+
+            return "";
+        }
+        case "ls": {
+            if (args.length === 1) {
+                const res = session.listFiles();
+                if (!res.ok) {
+                    return res.error;
+                }
+                return res.value;
+            }
+            return args.slice(1)
+                .map((arg) => {
+                    const res = session.listFiles(arg);
+                    if (!res.ok) {
+                        return res.error;
+                    }
+                    return res.value;
+                }).join("\n");
         }
         default:
             return `${command}: Command not found`;
