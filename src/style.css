@@ -4,7 +4,7 @@
   font-family: 'Ubuntu Mono', monospace;
 }
 
-span {
+span, .history-list {
   white-space: pre; /*enable whitespace*/
 }
 

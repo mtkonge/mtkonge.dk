@@ -41,36 +41,75 @@ export function fullDirPathString(node: Dir): string {
 }
 
 export class Session {
-    private cwdPath: Dir;
+    private cwdDir: Dir;
 
     constructor(
         private root: Dir,
         private username: string,
     ) {
-        this.cwdPath = root;
+        this.cwdDir = root;
     }
 
     public cd(path: string): Result<undefined, string> {
         if (path === "") {
-            this.cwdPath = this.userDir();
+            this.cwdDir = this.userDir();
             return Ok(undefined);
         }
+
         if (path === "/") {
-            this.cwdPath = this.root;
+            this.cwdDir = this.root;
             return Ok(undefined);
         }
-        const segments = lexPath(path);
-        for (const segment of segments) {
-            const res = this.changeToPathSegment(segment);
-            if (!res.ok) {
-                return Err(`${path}: No such file or directory`);
-            }
+
+        const res = this.getNodeFromPath(this.cwdDir, path);
+        if (!res.ok) {
+            return Err(`${path}: No such file or directory`);
         }
+
+        this.cwdDir = res.value;
+
         return Ok(undefined);
     }
 
+    public mkdir(dirname: string): Result<undefined, string> {
+        if (this.cwdDir.children.has(dirname)) {
+            return Err(`cannot create directory '${dirname}': File exists`);
+        }
+
+        this.cwdDir.children.set(dirname, {
+            name: dirname,
+            children: dirChildren({}),
+            parent: this.cwdDir,
+            files: new Map(),
+        });
+
+        return Ok(undefined);
+    }
+
+    public listFiles(path?: string): Result<string, string> {
+        let dir: Dir;
+        if (path) {
+            const res = this.getNodeFromPath(this.cwdDir, path);
+
+            if (!res.ok) {
+                return Err(`"${path}": No such file or directory`);
+            }
+            dir = res.value;
+        } else {
+            dir = this.cwdDir;
+        }
+
+        return Ok(
+            [
+                ...dir.children.keys(),
+                ...dir.files.keys(),
+            ]
+                .toSorted().join("\n"),
+        );
+    }
+
     public cwd(): string {
-        return fullDirPathString(this.cwdPath);
+        return fullDirPathString(this.cwdDir);
     }
 
     public cwdString(): string {
@@ -81,26 +120,41 @@ export class Session {
         return val.replace(new RegExp(`^/home/${this.username}`), "~");
     }
 
-    private changeToPathSegment(segment: string): Result<undefined, undefined> {
+    private getNodeFromPath(dir: Dir, path: string): Result<Dir, undefined> {
+        const segments = lexPath(path);
+
+        let node = path.startsWith("/") ? this.root : dir;
+        for (const segment of segments) {
+            const res = this.getNodeFromPathSegment(node, segment);
+            if (!res.ok) {
+                return Err(undefined);
+            }
+            node = res.value;
+        }
+
+        return Ok(node);
+    }
+
+    private getNodeFromPathSegment(
+        dir: Dir,
+        segment: string,
+    ): Result<Dir, undefined> {
         if (segment === ".") {
-            return Ok(undefined);
+            return Ok(dir);
         }
         if (segment === "..") {
-            if (!this.cwdPath.parent) {
-                return Ok(undefined);
+            if (!dir.parent) {
+                return Ok(dir);
             }
-            this.cwdPath = this.cwdPath.parent!;
-            return Ok(undefined);
+            return Ok(dir.parent);
         }
         if (segment === "~") {
-            this.cwdPath = this.userDir();
-            return Ok(undefined);
+            return Ok(this.userDir());
         }
-        if (!this.cwdPath.children.has(segment)) {
+        if (!dir.children.has(segment)) {
             return Err(undefined);
         }
-        this.cwdPath = this.cwdPath.children.get(segment)!;
-        return Ok(undefined);
+        return Ok(dir.children.get(segment)!);
     }
 
     private userDir(): Dir {
