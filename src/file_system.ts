@@ -10,7 +10,7 @@ const Err = <E>(error: E): Err<E> => ({ ok: false, error });
 export type Dir = {
     name: string;
     parent?: Dir;
-    children: Map<string, Dir>;
+    dirs: Map<string, Dir>;
     files: Map<string, string>;
 };
 
@@ -28,7 +28,7 @@ export function dirChildren(
 
 export function reverseOrphanDirTree(node: Dir, parent?: Dir) {
     node.parent = parent;
-    for (const child of node.children.values()) {
+    for (const child of node.dirs.values()) {
         reverseOrphanDirTree(child, node);
     }
 }
@@ -72,19 +72,28 @@ export class Session {
     }
 
     public mkdir(dirname: string): Result<undefined, string> {
-        if (this.cwdDir.children.has(dirname)) {
+        if (this.dirOrFileExists(dirname)) {
             return Err(`cannot create directory '${dirname}': File exists`);
         }
 
-        this.cwdDir.children.set(dirname, {
+        this.cwdDir.dirs.set(dirname, {
             name: dirname,
-            children: dirChildren({}),
+            dirs: dirChildren({}),
             parent: this.cwdDir,
             files: new Map(),
         });
 
         return Ok(undefined);
     }
+	public touch(filename: string):  Result<undefined, string> {
+		if (this.dirOrFileExists(filename)) {
+			return Err(`cannot create directory '${filename}': File exists`);
+		}
+
+		this.cwdDir.files.set(filename, "");
+
+		return Ok(undefined)
+	}
 
     public listFiles(path?: string): Result<string, string> {
         let dir: Dir;
@@ -101,7 +110,7 @@ export class Session {
 
         return Ok(
             [
-                ...dir.children.keys(),
+                ...dir.dirs.keys(),
                 ...dir.files.keys(),
             ]
                 .toSorted().join("\n"),
@@ -119,6 +128,10 @@ export class Session {
         }
         return val.replace(new RegExp(`^/home/${this.username}`), "~");
     }
+
+	public dirOrFileExists(name: string): boolean {
+		return this.cwdDir.dirs.has(name) || this.cwdDir.files.has(name);
+	}
 
     private getNodeFromPath(dir: Dir, path: string): Result<Dir, undefined> {
         const segments = lexPath(path);
@@ -151,16 +164,16 @@ export class Session {
         if (segment === "~") {
             return Ok(this.userDir());
         }
-        if (!dir.children.has(segment)) {
+        if (!dir.dirs.has(segment)) {
             return Err(undefined);
         }
-        return Ok(dir.children.get(segment)!);
+        return Ok(dir.dirs.get(segment)!);
     }
 
     private userDir(): Dir {
         return this.root
-            .children.get("home")!
-            .children.get("guest")!;
+            .dirs.get("home")!
+            .dirs.get("guest")!;
     }
 }
 
