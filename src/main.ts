@@ -89,11 +89,9 @@ console.log(session.cd(`/home/${username}`));
 function runCommand(command: string): string {
     const args = command.trim().split(" ");
 
-    if (args.length === 0) {
-        return "";
-    }
-
     switch (args[0]) {
+		case "":
+			return "";
         case "pwd":
             return session.cwd();
         case "cd": {
@@ -143,11 +141,19 @@ function runCommand(command: string): string {
 			if (args.length === 1) {
 				return "touch: missing file operand"
 			}
-			session.touch(args[1]);
+			for (const fn of args.slice(1)) {
+				session.touch(fn);
+			}
 			return ""
 		}
+		case "cat": {
+			if (args.length === 1) {
+				return "cat: missing file operand"
+			}
+			return args.slice(1).map(v => {const r = session.cat(v); return r.ok ? r.value : r.error }).reduce((acc, v) => acc + "\n" + v);
+		}
         default:
-            return `${command}: Command not found`;
+            return `${args[0]}: Command not found`;
     }
 }
 
