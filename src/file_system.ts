@@ -95,6 +95,15 @@ export class Session {
 		return Ok(undefined)
 	}
 
+	public cat(filename: string):  Result<string, string> {
+		const content = this.cwdDir.files.get(filename);
+		if (content === undefined) {
+			return Err(`"${filename}": No such file or directory`);
+		}
+
+		return Ok(content)
+	}
+
     public listFiles(path?: string): Result<string, string> {
         let dir: Dir;
         if (path) {
