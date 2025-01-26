@@ -58,20 +58,20 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
     }
 });
 
-function updateCursorPos(pos) {
+function updateCursorPos(pos: number) {
     input.setSelectionRange(pos, pos);
     updatePromptAndInput();
 }
 
 const root: Dir = {
     name: "/",
-    children: dirChildren({
+    dirs: dirChildren({
         "home": {
             name: "home",
-            children: dirChildren({
+            dirs: dirChildren({
                 [username]: {
                     name: username,
-                    children: dirChildren({}),
+                    dirs: dirChildren({}),
                     files: new Map(),
                 },
             }),
@@ -139,6 +139,13 @@ function runCommand(command: string): string {
                     return res.value;
                 }).join("\n");
         }
+		case "touch": {
+			if (args.length === 1) {
+				return "touch: missing file operand"
+			}
+			session.touch(args[1]);
+			return ""
+		}
         default:
             return `${command}: Command not found`;
     }
