@@ -9,9 +9,12 @@ const userPrefix = document.querySelector<HTMLDivElement>("#user")!;
 const dirElement = document.querySelector<HTMLDivElement>("#dir")!;
 
 const username = "guest";
+const commandHistory: string[] = [];
+let commandHistoryIndex = 0;
 
 input.addEventListener("input", updatePromptAndInput);
 input.addEventListener("keydown", updatePromptAndInput);
+input.addEventListener("keyup", updatePromptAndInput);
 input.addEventListener("focus", showCursor);
 input.addEventListener("blur", hideCursor);
 window.addEventListener("resize", setInputMaxLength);
@@ -23,8 +26,42 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
         updatePromptAndInput();
     } else if (event.ctrlKey && event.key === "c") {
         addHistoryItem("");
+    } else if (event.key === "ArrowUp") {
+        if (commandHistoryIndex >= commandHistory.length)
+            return;
+
+        commandHistoryIndex++;
+
+        input.value = commandHistory[commandHistory.length - commandHistoryIndex];
+        updateCursorPos(input.value.length);
+
+        event.preventDefault();
+    } else if (event.key === "ArrowDown") {
+        if (commandHistoryIndex === 1) {
+            input.value = ""; // TODO change to currently editing text
+
+            commandHistoryIndex--;
+
+            return;
+        }
+
+        if (commandHistoryIndex === 0) {
+            return;
+        }
+
+        commandHistoryIndex--;
+
+        input.value = commandHistory[commandHistory.length - commandHistoryIndex];
+        updateCursorPos(input.value.length);
+
+        event.preventDefault();
     }
 });
+
+function updateCursorPos(pos) {
+    input.setSelectionRange(pos, pos);
+    updatePromptAndInput();
+}
 
 const root: Dir = {
     name: "/",
@@ -129,6 +166,9 @@ function addHistoryItem(output: string) {
     historyItem.appendChild(outputElement);
 
     history.appendChild(historyItem);
+
+    commandHistory.push(input.value);
+
     input.value = "";
 }
 
