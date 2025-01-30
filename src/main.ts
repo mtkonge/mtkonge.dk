@@ -152,6 +152,12 @@ function runCommand(command: string): string {
 			}
 			return args.slice(1).map(v => {const r = session.cat(v); return r.ok ? r.value : r.error }).reduce((acc, v) => acc + "\n" + v);
 		}
+        case "echo": {
+            if (args.length === 1) {
+				return "\n";
+			}
+            return args[1];
+        }
         default:
             return `${args[0]}: Command not found`;
     }
