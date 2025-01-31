@@ -1,11 +1,4 @@
-type Result<V, E> = Ok<V> | Err<E>;
-
-type Ok<V> = { ok: true; value: V };
-
-type Err<E> = { ok: false; error: E };
-
-const Ok = <V>(value: V): Ok<V> => ({ ok: true, value });
-const Err = <E>(error: E): Err<E> => ({ ok: false, error });
+import { Err, Ok, Result } from "./Result.ts";
 
 export type Dir = {
     name: string;

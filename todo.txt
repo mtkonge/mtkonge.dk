@@ -2,4 +2,6 @@ tabbing for command args
 string parsing
 a way to write to a file
 
-implement command xdg-open
+implement commands:
+    xdg-open
+    rm
