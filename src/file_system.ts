@@ -1,4 +1,4 @@
-import { Err, Ok, Result } from "./Result.ts";
+import { Err, Ok, Result } from "./results.ts";
 
 export type Dir = {
     name: string;

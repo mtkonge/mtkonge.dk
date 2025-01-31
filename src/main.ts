@@ -1,5 +1,7 @@
 import { Session } from "./file_system.ts";
 import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
+import { CommandLexer } from "./lexer.ts";
+import { Err, Ok, Result } from "./results.ts";
 import "./style.css";
 
 const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
@@ -84,10 +86,19 @@ const root: Dir = {
 reverseOrphanDirTree(root);
 
 const session = new Session(root, username);
-console.log(session.cd(`/home/${username}`));
+session.cd(`/home/${username}`);
 
 function runCommand(command: string): string {
     const args = command.trim().split(" ");
+    const lexer = new CommandLexer(command)
+    while (!lexer.done()) {
+        const result = lexer.next()
+        if (!result.ok) {
+            console.error(result.error)
+        } else {
+            console.log(result.value)
+        }
+    }
 
     switch (args[0]) {
 		case "":

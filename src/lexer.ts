@@ -1,10 +1,21 @@
+import { Err, Ok, Result } from "./results.ts";
+
 export type Token = {
     index: number
     length: number
-    value?: string
-    option?: string
-    command?: string
+    value: Option | Argument
 }
+
+export type Option = {
+    single?: string
+    multiple?: string
+}
+
+export type Argument = {
+    value: string
+}
+
+
 
 export interface Command {
     args: Token[]
@@ -12,25 +23,25 @@ export interface Command {
 }
 
 export class CommandLexer {
-    private index = 0
+    private currentIndex = 0
 
     public constructor(private text: string) {
 
     }
 
-    private done(): boolean {
-        return this.index >= this.text.length
+    public done(): boolean {
+        return this.currentIndex >= this.text.length
     }
 
     private current(): string {
-        return this.text[this.index]
+        return this.text[this.currentIndex]
     }
 
     private step() {
         if (this.done()) {
             return
         }
-        this.index++
+        this.currentIndex++
     }
 
     private test(pattern: RegExp | string): boolean {
@@ -41,13 +52,52 @@ export class CommandLexer {
         }
     }
 
-    public next(): Token[] | null {
+    private token(index: number, value: Option | Argument): Token {
+        const length = this.currentIndex - index;
+        return { index, length, value };
+    }
+
+    public next(): Result<Token | null, string> {
         if (this.done()) {
-            return null
+            return Ok(null)
         }
+        const index = this.currentIndex
+        if (this.test(/[ \t\n\r/]/)) {
+            while (!this.done() && this.test(" ")) {
+                this.step()
+            }
+            return this.next()
+        }
+        if (this.test(/[a-zA-Z0-9_\./]/)) {
+            let argument = "" 
+            while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
+                argument += this.current()
+                this.step()
+            }
+            return Ok(this.token(index, {value: argument}))
+        }
+        if (this.test(/[-]/)) {
+            let option = ""
+            this.step()
+            if (!this.done() && this.test(/[-]/)) {
+                while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
+                    option += this.current()
+                    this.step()
+                }
+                return Ok(this.token(index, {single: option}))
+            }
+            if (!this.done()) {
+                while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
+                    option += this.current()
+                    this.step()
+                }
+                return Ok(this.token(index, {multiple: option}))
+            }
+            return Err(`Trailing '${this.current()}' at index ${this.currentIndex}`);
 
-
-        return []
+            
+        }
+        return Err(`Illegal character '${this.current()}' at index ${this.currentIndex}`);
     }
 
 
