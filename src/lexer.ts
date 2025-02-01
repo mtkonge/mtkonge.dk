@@ -69,10 +69,10 @@ export class CommandLexer {
             }
             return Ok(this.token(index, {value: argument}))
         }
-        if (this.test(/[-]/)) {
+        if (this.test("-")) {
             let option = ""
             this.step()
-            if (!this.done() && this.test(/[-]/)) {
+            if (!this.done() && this.test("-")) {
                 while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
                     option += this.current()
                     this.step()
