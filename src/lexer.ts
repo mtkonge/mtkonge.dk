@@ -3,7 +3,7 @@ import { Err, Ok, Result } from "./results.ts";
 export type Token = {
     index: number
     length: number
-    value: Option | Argument
+    value: Option | Argument | string
 }
 
 export type Option = {
@@ -13,13 +13,6 @@ export type Option = {
 
 export type Argument = {
     value: string
-}
-
-
-
-export interface Command {
-    args: Token[]
-    run(): string | void
 }
 
 export class CommandLexer {
@@ -52,7 +45,7 @@ export class CommandLexer {
         }
     }
 
-    private token(index: number, value: Option | Argument): Token {
+    private token(index: number, value: Option | Argument | string): Token {
         const length = this.currentIndex - index;
         return { index, length, value };
     }
@@ -68,7 +61,7 @@ export class CommandLexer {
             }
             return this.next()
         }
-        if (this.test(/[a-zA-Z0-9_\./]/)) {
+        if (this.test(/[a-zA-Z0-9_\.\/]/)) {
             let argument = "" 
             while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
                 argument += this.current()
@@ -94,8 +87,33 @@ export class CommandLexer {
                 return Ok(this.token(index, {multiple: option}))
             }
             return Err(`Trailing '${this.current()}' at index ${this.currentIndex}`);
+        }
 
-            
+        if (this.test(/["']/)) {
+            const stringType = this.current()
+            this.step()
+            let value = ""
+            while(!this.done() && !this.test(stringType)) {
+                if (this.test("\\")) {
+                    this.step()
+                    if (this.done()) {
+                        break;
+                    }
+                    value += {
+                        n: "\n",
+                        t: "\t",
+                        "0": "\0"
+                    }[this.current()] ?? this.current()
+                } else {
+                    value += this.current();
+                }
+                this.step()
+            }
+            if (this.done() || !this.test(stringType)) {
+                return Err(`unclosed/malformed string at index ${this.currentIndex}`);
+            }
+            this.step()
+            return Ok(this.token(index, value))
         }
         return Err(`Illegal character '${this.current()}' at index ${this.currentIndex}`);
     }
