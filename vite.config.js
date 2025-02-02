@@ -1,4 +1,4 @@
-export default defineConfig({
+export default {
   optimizeDeps: {
     esbuildOptions: {
       target: 'esnext'
@@ -7,4 +7,4 @@ export default defineConfig({
   build: {
     target: 'esnext'
   }
-})
+}
