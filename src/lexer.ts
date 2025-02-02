@@ -56,7 +56,7 @@ export class CommandLexer {
         }
         const index = this.currentIndex
         if (this.test(/[ \t\n\r/]/)) {
-            while (!this.done() && this.test(" ")) {
+            while (!this.done() && this.test(/[ \t\n\r/]/)) {
                 this.step()
             }
             return this.next()

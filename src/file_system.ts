@@ -1,5 +1,11 @@
 import { Err, Ok, Result } from "./results.ts";
 
+
+export type File = {
+    name: string
+    content: string
+}
+
 export type Dir = {
     name: string;
     parent?: Dir;
@@ -17,6 +23,16 @@ export function dirChildren(
     }
 
     return map;
+}
+
+export function fileChildren(children: { [key: string]: string }): Map<string, string> {
+    const map = new Map()
+    
+    for (const key in children) {
+        map.set(key, children[key]);
+    }
+
+    return map
 }
 
 export function reverseOrphanDirTree(node: Dir, parent?: Dir) {

@@ -1,7 +1,8 @@
-import { Session } from "./file_system.ts";
+import { fileChildren, Session } from "./file_system.ts";
 import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
 import { CommandLexer } from "./lexer.ts";
 import "./style.css";
+
 
 const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
 const cursor = document.querySelector<HTMLSpanElement>("#cursor")!;
@@ -59,6 +60,12 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
     }
 });
 
+async function loadTextFile(path: string): Promise<string> {
+    const response = await fetch(path);
+    return await response.text()
+}
+
+
 function updateCursorPos(pos: number) {
     input.setSelectionRange(pos, pos);
     updatePromptAndInput();
@@ -73,7 +80,7 @@ const root: Dir = {
                 [username]: {
                     name: username,
                     dirs: dirChildren({}),
-                    files: new Map(),
+                    files: fileChildren({"welcome.txt": await loadTextFile("welcome.txt")}),
                 },
             }),
             files: new Map(),
@@ -86,6 +93,9 @@ reverseOrphanDirTree(root);
 
 const session = new Session(root, username);
 session.cd(`/home/${username}`);
+addHistoryItem(runCommand("cat welcome.txt"));
+
+
 
 function runCommand(command: string): string {
     const args = command.trim().split(" ");

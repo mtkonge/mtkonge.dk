@@ -1,0 +1,9 @@
+Welcome to this simulation of a linux terminal. Have fun :)
+
+Here is a list of available commands:
+    touch [file]
+    mkdir [dir]
+    ls [dir]
+    cat [file]
+    pwd
+    echo [text]
