@@ -1,7 +1,6 @@
 import { Session } from "./file_system.ts";
 import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
 import { CommandLexer } from "./lexer.ts";
-import { Err, Ok, Result } from "./results.ts";
 import "./style.css";
 
 const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
