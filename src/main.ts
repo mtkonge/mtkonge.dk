@@ -3,7 +3,6 @@ import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
 import { CommandLexer } from "./lexer.ts";
 import "./style.css";
 
-
 const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
 const cursor = document.querySelector<HTMLSpanElement>("#cursor")!;
 const history = document.querySelector<HTMLDivElement>("#history")!;
@@ -19,8 +18,8 @@ input.addEventListener("keydown", updatePromptAndInput);
 input.addEventListener("keyup", updatePromptAndInput);
 input.addEventListener("focus", showCursor);
 input.addEventListener("blur", hideCursor);
-window.addEventListener("resize", setInputMaxLength);
-window.addEventListener("click", () => input.focus());
+addEventListener("resize", setInputMaxLength);
+addEventListener("click", () => input.focus());
 
 input.addEventListener("keydown", function (event: KeyboardEvent) {
     if (event.key === "Enter") {
@@ -29,12 +28,14 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
     } else if (event.ctrlKey && event.key === "c") {
         addHistoryItem("");
     } else if (event.key === "ArrowUp") {
-        if (commandHistoryIndex >= commandHistory.length)
+        if (commandHistoryIndex >= commandHistory.length) {
             return;
+        }
 
         commandHistoryIndex++;
 
-        input.value = commandHistory[commandHistory.length - commandHistoryIndex];
+        input.value =
+            commandHistory[commandHistory.length - commandHistoryIndex];
         updateCursorPos(input.value.length);
 
         event.preventDefault();
@@ -53,7 +54,8 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
 
         commandHistoryIndex--;
 
-        input.value = commandHistory[commandHistory.length - commandHistoryIndex];
+        input.value =
+            commandHistory[commandHistory.length - commandHistoryIndex];
         updateCursorPos(input.value.length);
 
         event.preventDefault();
@@ -62,9 +64,8 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
 
 async function loadTextFile(path: string): Promise<string> {
     const response = await fetch(path);
-    return await response.text()
+    return await response.text();
 }
-
 
 function updateCursorPos(pos: number) {
     input.setSelectionRange(pos, pos);
@@ -80,7 +81,9 @@ const root: Dir = {
                 [username]: {
                     name: username,
                     dirs: dirChildren({}),
-                    files: fileChildren({"welcome.txt": await loadTextFile("welcome.txt")}),
+                    files: fileChildren({
+                        "welcome.txt": await loadTextFile("welcome.txt"),
+                    }),
                 },
             }),
             files: new Map(),
@@ -95,23 +98,21 @@ const session = new Session(root, username);
 session.cd(`/home/${username}`);
 addHistoryItem(runCommand("cat welcome.txt"));
 
-
-
 function runCommand(command: string): string {
     const args = command.trim().split(" ");
-    const lexer = new CommandLexer(command)
+    const lexer = new CommandLexer(command);
     while (!lexer.done()) {
-        const result = lexer.next()
+        const result = lexer.next();
         if (!result.ok) {
-            console.error(result.error)
+            console.error(result.error);
         } else {
-            console.log(result.value)
+            console.log(result.value);
         }
     }
 
     switch (args[0]) {
-		case "":
-			return "";
+        case "":
+            return "";
         case "pwd":
             return session.cwd();
         case "cd": {
@@ -157,25 +158,28 @@ function runCommand(command: string): string {
                     return res.value;
                 }).join("\n");
         }
-		case "touch": {
-			if (args.length === 1) {
-				return "touch: missing file operand"
-			}
-			for (const fn of args.slice(1)) {
-				session.touch(fn);
-			}
-			return ""
-		}
-		case "cat": {
-			if (args.length === 1) {
-				return "cat: missing file operand"
-			}
-			return args.slice(1).map(v => {const r = session.cat(v); return r.ok ? r.value : r.error }).reduce((acc, v) => acc + "\n" + v);
-		}
+        case "touch": {
+            if (args.length === 1) {
+                return "touch: missing file operand";
+            }
+            for (const fn of args.slice(1)) {
+                session.touch(fn);
+            }
+            return "";
+        }
+        case "cat": {
+            if (args.length === 1) {
+                return "cat: missing file operand";
+            }
+            return args.slice(1).map((v) => {
+                const r = session.cat(v);
+                return r.ok ? r.value : r.error;
+            }).reduce((acc, v) => acc + "\n" + v);
+        }
         case "echo": {
             if (args.length === 1) {
-				return "\n";
-			}
+                return "\n";
+            }
             return args[1];
         }
         default:
