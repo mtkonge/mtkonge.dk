@@ -1,6 +1,6 @@
-export type Cmd = "pwd" | "cd" | "mkdir" | "ls" | "touch" | "cat" | "echo";
+export type Cmd = (typeof cmds)[number];
 
-const cmds: Cmd[] = [
+const cmds = [
     "pwd",
     "cd",
     "mkdir",
@@ -8,7 +8,7 @@ const cmds: Cmd[] = [
     "touch",
     "cat",
     "echo",
-];
+] as const;
 
 export function validCmds(): string[] {
     return cmds.map((v) => v.toString());
