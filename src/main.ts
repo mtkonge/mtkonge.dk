@@ -91,15 +91,29 @@ function requestAutoComplete(cmd: string, last: string | undefined): string[] {
             return result.map((v) => path !== undefined ? path + v : v);
         }
         case "pwd":
-        case "echo": {
+        case "echo":
+        case "clear": {
             return [];
         }
     }
 }
 
-input.addEventListener("keydown", function (event: KeyboardEvent) {
+input.addEventListener("keydown", function(event: KeyboardEvent) {
     if (event.key === "Enter") {
-        addHistoryItem(runCommand(input.value));
+        let shouldClear = false;
+
+        const output = runCommand(input.value, {
+            clear() {
+                shouldClear = true;
+            },
+        });
+
+        if (shouldClear) {
+            clearHistory();
+        } else {
+            addHistoryItem(output);
+        }
+
         input.value = "";
         updatePromptAndInput();
     } else if (event.ctrlKey && event.key === "c") {
@@ -188,7 +202,11 @@ const session = new Session(root, username);
 session.cd(`/home/${username}`);
 addHistoryItem(runCommand("cat welcome.txt"));
 
-function runCommand(command: string): string {
+type MetaCmds = {
+    clear?(): void;
+};
+
+function runCommand(command: string, metaCmds: MetaCmds = {}): string {
     const [cmd, ...args] = command.trim().split(" ");
     const lexer = new CommandLexer(command);
     while (!lexer.done()) {
@@ -276,6 +294,10 @@ function runCommand(command: string): string {
             }
             return args[0];
         }
+        case "clear": {
+            metaCmds.clear?.();
+            return "";
+        }
     }
 }
 
@@ -303,6 +325,12 @@ function addHistoryItem(output: string) {
     history.appendChild(historyItem);
 
     commandHistory.push(input.value);
+}
+
+function clearHistory() {
+    for (const child of history.children) {
+        history.removeChild(child);
+    }
 }
 
 function setInputMaxLength() {
