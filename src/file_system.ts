@@ -1,10 +1,9 @@
 import { Err, Ok, Result } from "./results.ts";
 
-
 export type File = {
-    name: string
-    content: string
-}
+    name: string;
+    content: string;
+};
 
 export type Dir = {
     name: string;
@@ -25,14 +24,16 @@ export function dirChildren(
     return map;
 }
 
-export function fileChildren(children: { [key: string]: string }): Map<string, string> {
-    const map = new Map()
-    
+export function fileChildren(
+    children: { [key: string]: string },
+): Map<string, string> {
+    const map = new Map();
+
     for (const key in children) {
         map.set(key, children[key]);
     }
 
-    return map
+    return map;
 }
 
 export function reverseOrphanDirTree(node: Dir, parent?: Dir) {
@@ -80,40 +81,64 @@ export class Session {
         return Ok(undefined);
     }
 
-    public mkdir(dirname: string): Result<undefined, string> {
-        if (this.dirOrFileExists(dirname)) {
-            return Err(`cannot create directory '${dirname}': File exists`);
+    public mkdir(path: string): Result<undefined, string> {
+        const result = this.getNodeAndFilenameFromPath(this.cwdDir, path);
+        if (!result.ok) {
+            return Err(`'${path}': No such file or directory`);
         }
 
-        this.cwdDir.dirs.set(dirname, {
-            name: dirname,
+        const [filename, node] = result.value;
+        if (node.files.get(filename) || node.dirs.get(filename)) {
+            return Err(
+                `cannot create directory ‘${path}’: File exists`,
+            );
+        }
+
+        node.dirs.set(filename, {
+            name: filename,
             dirs: dirChildren({}),
-            parent: this.cwdDir,
+            parent: node,
             files: new Map(),
         });
 
         return Ok(undefined);
     }
-	public touch(filename: string):  Result<undefined, string> {
-		if (this.dirOrFileExists(filename)) {
-			return Err(`cannot create directory '${filename}': File exists`);
-		}
+    public touch(path: string): Result<undefined, string> {
+        const result = this.getNodeAndFilenameFromPath(this.cwdDir, path);
+        if (!result.ok) {
+            return Err(`'${path}': No such file or directory`);
+        }
 
-		this.cwdDir.files.set(filename, "");
+        const [filename, node] = result.value;
+        if (node.dirs.get(filename) || node.files.get(filename)) {
+            return Ok(undefined);
+        }
 
-		return Ok(undefined)
-	}
+        node.files.set(filename, "");
 
-	public cat(filename: string):  Result<string, string> {
-		const content = this.cwdDir.files.get(filename);
-		if (content === undefined) {
-			return Err(`"${filename}": No such file or directory`);
-		}
+        return Ok(undefined);
+    }
 
-		return Ok(content)
-	}
+    public cat(path: string): Result<string, string> {
+        const result = this.getNodeAndFilenameFromPath(this.cwdDir, path);
+        if (!result.ok) {
+            return Err(`'${path}': No such file or directory`);
+        }
 
-    public listFiles(path?: string): Result<string, string> {
+        const [filename, node] = result.value;
+        if (node.dirs.get(filename)) {
+            return Err(`'${path}': Is a directory`);
+        }
+
+        const content = node.files.get(filename);
+        if (!content) {
+            return Err(`'${path}': No such file or directory`);
+        }
+
+        return Ok(content);
+    }
+
+    public listFiles(path?: string): Result<string[], string> {
         let dir: Dir;
         if (path) {
             const res = this.getNodeFromPath(this.cwdDir, path);
@@ -128,10 +153,10 @@ export class Session {
 
         return Ok(
             [
-                ...dir.dirs.keys(),
+                ...dir.dirs.keys().map((v) => v + "/"),
                 ...dir.files.keys(),
             ]
-                .toSorted().join("\n"),
+                .toSorted(),
         );
     }
 
@@ -147,9 +172,36 @@ export class Session {
         return val.replace(new RegExp(`^/home/${this.username}`), "~");
     }
 
-	public dirOrFileExists(name: string): boolean {
-		return this.cwdDir.dirs.has(name) || this.cwdDir.files.has(name);
-	}
+    public dirOrFileExists(path: string): boolean {
+        const result = this.getNodeAndFilenameFromPath(this.cwdDir, path);
+        if (!result.ok) {
+            return false;
+        }
+        const [filename, node] = result.value;
+        return node.dirs.has(filename) || node.files.has(filename);
+    }
+
+    private getNodeAndFilenameFromPath(
+        dir: Dir,
+        path: string,
+    ): Result<[string, Dir], undefined> {
+        const segments = lexPath(path);
+        const filename = segments.pop();
+        if (!filename) {
+            throw new Error("unreachable: path cannot be empty");
+        }
+
+        let node = path.startsWith("/") ? this.root : dir;
+        for (const segment of segments) {
+            const res = this.getNodeFromPathSegment(node, segment);
+            if (!res.ok) {
+                return Err(undefined);
+            }
+            node = res.value;
+        }
+
+        return Ok([filename, node]);
+    }
 
     private getNodeFromPath(dir: Dir, path: string): Result<Dir, undefined> {
         const segments = lexPath(path);

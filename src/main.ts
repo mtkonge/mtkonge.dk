@@ -1,3 +1,4 @@
+import { rawCmdIsCmd, validCmds } from "./cmd_validation.ts";
 import { fileChildren, Session } from "./file_system.ts";
 import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
 import { CommandLexer } from "./lexer.ts";
@@ -21,12 +22,101 @@ input.addEventListener("blur", hideCursor);
 addEventListener("resize", setInputMaxLength);
 addEventListener("click", () => input.focus());
 
+function autoCompleteMatches(
+    input: string,
+    options: string[],
+): string[] {
+    const matches = options.map((v) => v).filter((v) => v.startsWith(input));
+    if (matches.length <= 1) {
+        return matches;
+    }
+    const maxLength = matches.map((v) => v.length)
+        .toSorted()
+        .toReversed()
+        .pop();
+    if (maxLength === undefined) {
+        throw new Error("unreachable: we return if length <= 1");
+    }
+    let closestLength = 0;
+    const letters = matches[0].split("").slice(0, maxLength);
+    for (let letterIdx = 0; letterIdx < maxLength; ++letterIdx) {
+        const letterToMatch = letters[letterIdx];
+        if (matches.every((match) => match[letterIdx] === letterToMatch)) {
+            // we add 1 here because it's a length, not an index
+            closestLength = letterIdx + 1;
+        } else {
+            break;
+        }
+    }
+    if (closestLength === input.length) {
+        return matches;
+    } else if (closestLength < input.length) {
+        throw new Error(
+            "unreachable: matches that start with {input} all share {input} in common",
+        );
+    }
+    return [matches[0].substring(0, closestLength)];
+}
+
+function requestAutoComplete(cmd: string, last: string | undefined): string[] {
+    if (last === undefined) {
+        if (rawCmdIsCmd(cmd)) {
+            return [];
+        }
+        return autoCompleteMatches(cmd, validCmds());
+    } else if (!rawCmdIsCmd(cmd)) {
+        return [];
+    }
+    switch (cmd) {
+        case "cd":
+        case "mkdir":
+        case "ls":
+        case "touch":
+        case "cat": {
+            const fileSeperator = last.lastIndexOf("/");
+            const path = fileSeperator !== -1
+                ? last.substring(0, fileSeperator + 1)
+                : undefined;
+            const filename = fileSeperator !== -1
+                ? last.substring(fileSeperator + 1)
+                : last;
+            const files = session.listFiles(path);
+            if (!files.ok) {
+                return [];
+            }
+            const result = autoCompleteMatches(
+                filename,
+                files.value,
+            );
+            return result.map((v) => path !== undefined ? path + v : v);
+        }
+        case "pwd":
+        case "echo": {
+            return [];
+        }
+    }
+}
+
 input.addEventListener("keydown", function (event: KeyboardEvent) {
     if (event.key === "Enter") {
         addHistoryItem(runCommand(input.value));
+        input.value = "";
         updatePromptAndInput();
     } else if (event.ctrlKey && event.key === "c") {
         addHistoryItem("");
+        input.value = "";
+    } else if (event.key === "Tab") {
+        const [cmd, ...args] = input.value.trimStart().split(/\s+/g);
+        const last = args.pop();
+        const options = requestAutoComplete(cmd, last);
+        if (options.length === 1) {
+            const option = options[0];
+            const idx = input.value.lastIndexOf(last ?? cmd);
+            input.value = input.value.substring(0, idx) + option;
+        } else if (options.length > 1) {
+            addHistoryItem(options.join("\n"));
+        }
+        event.preventDefault();
     } else if (event.key === "ArrowUp") {
         if (commandHistoryIndex >= commandHistory.length) {
             return;
@@ -99,7 +189,7 @@ session.cd(`/home/${username}`);
 addHistoryItem(runCommand("cat welcome.txt"));
 
 function runCommand(command: string): string {
-    const args = command.trim().split(" ");
+    const [cmd, ...args] = command.trim().split(" ");
     const lexer = new CommandLexer(command);
     while (!lexer.done()) {
         const result = lexer.next();
@@ -110,17 +200,21 @@ function runCommand(command: string): string {
         }
     }
 
-    switch (args[0]) {
-        case "":
-            return "";
+    if (cmd === "") {
+        return "";
+    }
+    if (!rawCmdIsCmd(cmd)) {
+        return `${cmd}: Command not found`;
+    }
+    switch (cmd) {
         case "pwd":
             return session.cwd();
         case "cd": {
-            if (args.length > 2) {
+            if (args.length > 1) {
                 return "cd: too many arguments";
             }
 
-            const res = session.cd(args[1]);
+            const res = session.cd(args[0]);
             if (!res.ok) {
                 return `cd: ${res.error}`;
             }
@@ -128,11 +222,11 @@ function runCommand(command: string): string {
             return "";
         }
         case "mkdir": {
-            if (args.length === 1) {
+            if (args.length === 0) {
                 return "mkdir: missing operand";
             }
 
-            for (const dir of args.slice(1)) {
+            for (const dir of args) {
                 const res = session.mkdir(dir);
                 if (!res.ok) {
                     return `mkdir: ${res.error}`;
@@ -142,48 +236,46 @@ function runCommand(command: string): string {
             return "";
         }
         case "ls": {
-            if (args.length === 1) {
+            if (args.length === 0) {
                 const res = session.listFiles();
                 if (!res.ok) {
                     return res.error;
                 }
-                return res.value;
+                return res.value.join("\n");
             }
-            return args.slice(1)
+            return args
                 .map((arg) => {
                     const res = session.listFiles(arg);
                     if (!res.ok) {
                         return res.error;
                     }
-                    return res.value;
+                    return res.value.join("\n");
                 }).join("\n");
         }
         case "touch": {
-            if (args.length === 1) {
+            if (args.length === 0) {
                 return "touch: missing file operand";
             }
-            for (const fn of args.slice(1)) {
+            for (const fn of args) {
                 session.touch(fn);
             }
             return "";
         }
         case "cat": {
-            if (args.length === 1) {
+            if (args.length === 0) {
                 return "cat: missing file operand";
             }
-            return args.slice(1).map((v) => {
+            return args.map((v) => {
                 const r = session.cat(v);
                 return r.ok ? r.value : r.error;
             }).reduce((acc, v) => acc + "\n" + v);
         }
         case "echo": {
-            if (args.length === 1) {
+            if (args.length === 0) {
                 return "\n";
             }
-            return args[1];
+            return args[0];
         }
-        default:
-            return `${args[0]}: Command not found`;
     }
 }
 
@@ -211,8 +303,6 @@ function addHistoryItem(output: string) {
     history.appendChild(historyItem);
 
     commandHistory.push(input.value);
-
-    input.value = "";
 }
 
 function setInputMaxLength() {
