@@ -11,7 +11,7 @@ export type Cmd = {
     short_options: string[];
     long_options: string[];
     arguments: string[];
-    redirect: Redirect[];
+    redirects: Redirect[];
 };
 
 export class CommandParser {
@@ -50,7 +50,7 @@ export class CommandParser {
         const cmd: Cmd = {
             bin: "",
             long_options: [],
-            redirect: [],
+            redirects: [],
             short_options: [],
             arguments: [],
         };
@@ -83,8 +83,8 @@ export class CommandParser {
                     if (!res.ok) {
                         return res;
                     }
-                    cmd.redirect.push({
-                        tag: "append",
+                    cmd.redirects.push({
+                        tag: "write",
                         target: res.value.argument,
                     });
                     break;
@@ -94,7 +94,7 @@ export class CommandParser {
                     if (!res.ok) {
                         return res;
                     }
-                    cmd.redirect.push({
+                    cmd.redirects.push({
                         tag: "append",
                         target: res.value.argument,
                     });

@@ -1,7 +1,7 @@
 import { rawCmdIsCmd, validCmds } from "./cmd_validation.ts";
 import { fileChildren, Session } from "./file_system.ts";
 import { Dir, dirChildren, linkDirTreeOrphans } from "./file_system.ts";
-import { CommandLexer, RedirectAppend } from "./lexer.ts";
+import { CommandLexer } from "./lexer.ts";
 import { CommandParser, Redirect } from "./parser.ts";
 import { Err, Ok, Result } from "./results.ts";
 import "./style.css";
@@ -104,16 +104,41 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
     if (event.key === "Enter") {
         let shouldClear = false;
 
-        const output = runCommand(input.value, {
+        const res = runCommand(input.value, {
             clear() {
                 shouldClear = true;
             },
         });
 
+        if (!res.ok) {
+            addHistoryItem(res.error);
+            input.value = "";
+            return;
+        }
+
+        const output = res.value;
+        if (output.redirects.length === 0) {
+            addHistoryItem(res.value.content);
+        } else {
+            for (const redirect of output.redirects) {
+                const res = session.createOrOpenFile(redirect.target);
+                if (!res.ok) {
+                    addHistoryItem(`bash: ${res.error}`);
+                    input.value = "";
+                    return;
+                }
+                const file = res.value;
+                if (redirect.tag === "write") {
+                    file.content = output.content;
+                } else if (redirect.tag === "append") {
+                    file.content += output.content;
+                }
+            }
+            addHistoryItem("");
+        }
+
         if (shouldClear) {
             clearHistory();
-        } else {
-            addHistoryItem(output);
         }
 
         input.value = "";
@@ -216,7 +241,7 @@ type MetaCmds = {
 };
 
 type Output = {
-    redirect: Redirect[];
+    redirects: Redirect[];
     content: string;
 };
 
@@ -245,14 +270,14 @@ function runCommand(
     }
 
     const cmd = parseRes.value;
-    const redirect = cmd.redirect;
+    const redirects = cmd.redirects;
 
     if (!rawCmdIsCmd(cmd.bin)) {
         return Err(`${cmd.bin}: Command not found`);
     }
     switch (cmd.bin) {
         case "pwd":
-            return Ok({ redirect, content: session.pwd() });
+            return Ok({ redirects, content: session.pwd() });
         case "cd": {
             if (cmd.arguments.length > 1) {
                 return Err("cd: too many arguments");
@@ -263,7 +288,7 @@ function runCommand(
                 return Err(`cd: ${res.error}`);
             }
 
-            return Ok({ redirect, content: "" });
+            return Ok({ redirects, content: "" });
         }
         case "mkdir": {
             if (cmd.arguments.length === 0) {
@@ -280,7 +305,7 @@ function runCommand(
                 }
             }
 
-            return Ok({ redirect, content: "" });
+            return Ok({ redirects, content: "" });
         }
         case "ls": {
             const showAll = cmd.short_options.includes("a") ||
@@ -299,7 +324,7 @@ function runCommand(
                         : v.error
                 ).join("\n");
             return Ok({
-                redirect,
+                redirects,
                 content,
             });
         }
@@ -310,7 +335,7 @@ function runCommand(
             for (const file of cmd.arguments) {
                 session.touch(file);
             }
-            return Ok({ redirect, content: "" });
+            return Ok({ redirects, content: "" });
         }
         case "cat": {
             if (cmd.arguments.length === 0) {
@@ -322,18 +347,18 @@ function runCommand(
                 .reduce((acc, v) => acc + "\n" + v);
             return Ok({
                 content,
-                redirect,
+                redirects,
             });
         }
         case "echo": {
             if (cmd.arguments.length === 0) {
-                return Ok({ redirect, content: "\n" });
+                return Ok({ redirects, content: "\n" });
             }
-            return Ok({ redirect, content: cmd.arguments.join(" ") + "\n" });
+            return Ok({ redirects, content: cmd.arguments.join(" ") + "\n" });
         }
         case "clear": {
             metaCmds.clear?.();
-            return Ok({ redirect, content: "" });
+            return Ok({ redirects, content: "" });
         }
     }
 }

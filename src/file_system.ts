@@ -91,6 +91,24 @@ export class Session {
         return Ok(undefined);
     }
 
+    public createOrOpenFile(path: string): Result<File, string> {
+        const res = this.getParentFromPath(path);
+        if (!res.ok) {
+            return res;
+        }
+        const [name, parent] = res.value;
+        const file = parent.children.get(name);
+        if (!file) {
+            const child: File = { tag: "file", name, content: "" };
+            parent.children.set(name, child);
+            return Ok(child);
+        }
+        if (file.tag === "dir") {
+            return Err(`${path}: Is a directory`);
+        }
+        return Ok(file);
+    }
+
     private createDir(name: string, parent: Dir): Dir {
         const dir: Dir = {
             tag: "dir",
