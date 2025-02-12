@@ -1,40 +1,58 @@
 import { Err, Ok, Result } from "./results.ts";
 
 export type Token = {
-    index: number
-    length: number
-    value: Option | Argument | string
-}
+    index: number;
+    length: number;
+    value:
+        | LongOption
+        | ShortOption
+        | Argument
+        | RedirectWrite
+        | RedirectAppend;
+};
 
-export type Option = {
-    single?: string
-    multiple?: string
-}
+export type RedirectWrite = {
+    tag: "redirect_write";
+};
+
+export type RedirectAppend = {
+    tag: "redirect_append";
+};
+
+export type LongOption = {
+    tag: "long_option";
+    option: string;
+};
+
+export type ShortOption = {
+    tag: "short_option";
+    option: string;
+};
 
 export type Argument = {
-    value: string
-}
+    tag: "argument";
+    argument: string;
+};
 
 export class CommandLexer {
-    private currentIndex = 0
+    private currentIndex = 0;
 
     public constructor(private text: string) {
-
     }
 
     public done(): boolean {
-        return this.currentIndex >= this.text.length
+        return this.currentIndex >= this.text.length;
     }
 
     private current(): string {
-        return this.text[this.currentIndex]
+        return this.text[this.currentIndex];
     }
 
     private step() {
         if (this.done()) {
-            return
+            return;
         }
-        this.currentIndex++
+        this.currentIndex++;
     }
 
     private test(pattern: RegExp | string): boolean {
@@ -45,82 +63,127 @@ export class CommandLexer {
         }
     }
 
-    private token(index: number, value: Option | Argument | string): Token {
+    private token(index: number, value: Token["value"]): Token {
         const length = this.currentIndex - index;
         return { index, length, value };
     }
 
+    private eatValue(valueCharacters: RegExp | string): Result<string, string> {
+        let value = "";
+        while (!this.done() && this.test(valueCharacters)) {
+            if (this.test("\\")) {
+                this.step();
+                if (this.done()) {
+                    return Err("Encountered '\\' without value after");
+                }
+                value += this.current();
+                this.step();
+                continue;
+            }
+            value += this.current();
+            this.step();
+        }
+        return Ok(value);
+    }
+
     public next(): Result<Token | null, string> {
         if (this.done()) {
-            return Ok(null)
+            return Ok(null);
         }
-        const index = this.currentIndex
-        if (this.test(/[ \t\n\r/]/)) {
-            while (!this.done() && this.test(/[ \t\n\r/]/)) {
-                this.step()
+        const index = this.currentIndex;
+        if (this.test(/\s/)) {
+            while (!this.done() && this.test(/\s/)) {
+                this.step();
             }
-            return this.next()
+            return this.next();
         }
-        if (this.test(/[a-zA-Z0-9_\.\/]/)) {
-            let argument = "" 
-            while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
-                argument += this.current()
-                this.step()
-            }
-            return Ok(this.token(index, {value: argument}))
-        }
+        const argChars = /[^>\s]/;
         if (this.test("-")) {
-            let option = ""
-            this.step()
+            this.step();
+
+            let tag: Token["value"]["tag"] = "short_option";
             if (!this.done() && this.test("-")) {
-                while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
-                    option += this.current()
-                    this.step()
-                }
-                return Ok(this.token(index, {single: option}))
+                this.step();
+                tag = "long_option";
             }
             if (!this.done()) {
-                while (!this.done() && this.test(/[a-zA-Z0-9_\./-]/)) {
-                    option += this.current()
-                    this.step()
+                const res = this.eatValue(argChars);
+                if (!res.ok) {
+                    return Err(res.error);
                 }
-                return Ok(this.token(index, {multiple: option}))
+                return Ok(
+                    this.token(index, {
+                        tag,
+                        option: res.value,
+                    }),
+                );
             }
-            return Err(`Trailing '${this.current()}' at index ${this.currentIndex}`);
+            return Err(
+                `Option without value at index ${this.currentIndex}`,
+            );
+        }
+
+        if (this.test(">")) {
+            this.step();
+
+            let tag: Token["value"]["tag"] = "redirect_write";
+            if (!this.done() && this.test(">")) {
+                this.step();
+                tag = "redirect_append";
+            }
+            return Ok(
+                this.token(index, {
+                    tag,
+                }),
+            );
         }
 
         if (this.test(/["']/)) {
-            const stringType = this.current()
-            this.step()
-            let value = ""
-            while(!this.done() && !this.test(stringType)) {
+            const quoteType = this.current();
+            this.step();
+            let argument = "";
+            while (!this.done() && !this.test(quoteType)) {
                 if (this.test("\\")) {
-                    this.step()
+                    this.step();
                     if (this.done()) {
                         break;
                     }
-                    value += {
+                    argument += {
                         n: "\n",
                         t: "\t",
-                        "0": "\0"
-                    }[this.current()] ?? this.current()
+                        "0": "\0",
+                    }[this.current()] ?? this.current();
                 } else {
-                    value += this.current();
+                    argument += this.current();
                 }
-                this.step()
+                this.step();
             }
-            if (this.done() || !this.test(stringType)) {
-                return Err(`unclosed/malformed string at index ${this.currentIndex}`);
+            if (this.done() || !this.test(quoteType)) {
+                return Err(
+                    `Unclosed/malformed string at index ${this.currentIndex}`,
+                );
             }
-            this.step()
-            return Ok(this.token(index, value))
+            this.step();
+            return Ok(
+                this.token(index, { tag: "argument", argument }),
+            );
         }
-        return Err(`Illegal character '${this.current()}' at index ${this.currentIndex}`);
+
+        if (this.test(argChars)) {
+            const res = this.eatValue(argChars);
+            if (!res.ok) {
+                return Err(res.error);
+            }
+            return Ok(
+                this.token(index, { tag: "argument", argument: res.value }),
+            );
+        }
+
+        const current = this.current();
+        const currentIndex = this.currentIndex;
+        this.step();
+        return Err(
+            `Illegal character '${current}' at index ${currentIndex}`,
+        );
     }
-
-
-
-
 }
-
-
