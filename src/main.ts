@@ -1,7 +1,9 @@
 import { rawCmdIsCmd, validCmds } from "./cmd_validation.ts";
 import { fileChildren, Session } from "./file_system.ts";
-import { Dir, dirChildren, reverseOrphanDirTree } from "./file_system.ts";
+import { Dir, dirChildren, linkDirTreeOrphans } from "./file_system.ts";
 import { CommandLexer } from "./lexer.ts";
+import { CommandParser, Redirect } from "./parser.ts";
+import { Err, Ok, Result } from "./results.ts";
 import "./style.css";
 
 const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
@@ -84,11 +86,11 @@ function requestAutoComplete(cmd: string, last: string | undefined): string[] {
             if (!files.ok) {
                 return [];
             }
-            const result = autoCompleteMatches(
+            const res = autoCompleteMatches(
                 filename,
                 files.value,
             );
-            return result.map((v) => path !== undefined ? path + v : v);
+            return res.map((v) => path !== undefined ? path + v : v);
         }
         case "pwd":
         case "echo":
@@ -98,20 +100,45 @@ function requestAutoComplete(cmd: string, last: string | undefined): string[] {
     }
 }
 
-input.addEventListener("keydown", function(event: KeyboardEvent) {
+input.addEventListener("keydown", function (event: KeyboardEvent) {
     if (event.key === "Enter") {
         let shouldClear = false;
 
-        const output = runCommand(input.value, {
+        const res = runCommand(input.value, {
             clear() {
                 shouldClear = true;
             },
         });
 
+        if (!res.ok) {
+            addHistoryItem(res.error);
+            input.value = "";
+            return;
+        }
+
+        const output = res.value;
+        if (output.redirects.length === 0) {
+            addHistoryItem(res.value.content);
+        } else {
+            for (const redirect of output.redirects) {
+                const res = session.createOrOpenFile(redirect.target);
+                if (!res.ok) {
+                    addHistoryItem(`bash: ${res.error}`);
+                    input.value = "";
+                    return;
+                }
+                const file = res.value;
+                if (redirect.tag === "write") {
+                    file.content = output.content;
+                } else if (redirect.tag === "append") {
+                    file.content += output.content;
+                }
+            }
+            addHistoryItem("");
+        }
+
         if (shouldClear) {
             clearHistory();
-        } else {
-            addHistoryItem(output);
         }
 
         input.value = "";
@@ -177,126 +204,161 @@ function updateCursorPos(pos: number) {
 }
 
 const root: Dir = {
+    tag: "dir",
     name: "/",
-    dirs: dirChildren({
+    parent: null,
+    children: dirChildren({
         "home": {
+            tag: "dir",
             name: "home",
-            dirs: dirChildren({
+            parent: null,
+            children: dirChildren({
                 [username]: {
+                    tag: "dir",
                     name: username,
-                    dirs: dirChildren({}),
-                    files: fileChildren({
+                    parent: null,
+                    children: fileChildren({
                         "welcome.txt": await loadTextFile("welcome.txt"),
                     }),
                 },
             }),
-            files: new Map(),
         },
     }),
-    files: new Map(),
 };
 
-reverseOrphanDirTree(root);
+linkDirTreeOrphans(root, null);
 
 const session = new Session(root, username);
 session.cd(`/home/${username}`);
-addHistoryItem(runCommand("cat welcome.txt"));
+addHistoryItem((() => {
+    const res = runCommand("cat welcome.txt");
+    if (!res.ok) throw new Error("unreachable: valid cat command");
+    return res.value.content;
+})());
 
 type MetaCmds = {
     clear?(): void;
 };
 
-function runCommand(command: string, metaCmds: MetaCmds = {}): string {
-    const [cmd, ...args] = command.trim().split(" ");
+type Output = {
+    redirects: Redirect[];
+    content: string;
+};
+
+function runCommand(
+    command: string,
+    metaCmds: MetaCmds = {},
+): Result<Output, string> {
     const lexer = new CommandLexer(command);
+    const tokens = [];
     while (!lexer.done()) {
-        const result = lexer.next();
-        if (!result.ok) {
-            console.error(result.error);
+        const res = lexer.next();
+        if (!res.ok) {
+            return Err(`error lexing cmd: ${res.error}`);
         } else {
-            console.log(result.value);
+            if (!res.value) {
+                throw new Error(
+                    "unreachable: should only return null tokens if lexer is done",
+                );
+            }
+            tokens.push(res.value);
         }
     }
+    const parseRes = new CommandParser(tokens).parse();
+    if (!parseRes.ok) {
+        return parseRes;
+    }
 
-    if (cmd === "") {
-        return "";
+    const cmd = parseRes.value;
+    const redirects = cmd.redirects;
+
+    if (!rawCmdIsCmd(cmd.bin)) {
+        return Err(`${cmd.bin}: Command not found`);
     }
-    if (!rawCmdIsCmd(cmd)) {
-        return `${cmd}: Command not found`;
-    }
-    switch (cmd) {
+    switch (cmd.bin) {
         case "pwd":
-            return session.cwd();
+            return Ok({ redirects, content: session.pwd() });
         case "cd": {
-            if (args.length > 1) {
-                return "cd: too many arguments";
+            if (cmd.arguments.length > 1) {
+                return Err("cd: too many arguments");
             }
 
-            const res = session.cd(args[0]);
+            const res = session.cd(cmd.arguments.pop() ?? "");
             if (!res.ok) {
-                return `cd: ${res.error}`;
+                return Err(`cd: ${res.error}`);
             }
 
-            return "";
+            return Ok({ redirects, content: "" });
         }
         case "mkdir": {
-            if (args.length === 0) {
-                return "mkdir: missing operand";
+            if (cmd.arguments.length === 0) {
+                return Err("mkdir: missing operand");
             }
 
-            for (const dir of args) {
-                const res = session.mkdir(dir);
+            const makeParents = cmd.short_options.includes("p") ||
+                cmd.long_options.includes("parents");
+
+            for (const dir of cmd.arguments) {
+                const res = session.mkdir(dir, makeParents);
                 if (!res.ok) {
-                    return `mkdir: ${res.error}`;
+                    return Err(`mkdir: ${res.error}`);
                 }
             }
 
-            return "";
+            return Ok({ redirects, content: "" });
         }
         case "ls": {
-            if (args.length === 0) {
-                const res = session.listFiles();
-                if (!res.ok) {
-                    return res.error;
-                }
-                return res.value.join("\n");
-            }
-            return args
-                .map((arg) => {
-                    const res = session.listFiles(arg);
-                    if (!res.ok) {
-                        return res.error;
-                    }
-                    return res.value.join("\n");
-                }).join("\n");
+            const showAll = cmd.short_options.includes("a") ||
+                cmd.long_options.includes("all");
+
+            const res = cmd.arguments.length === 0
+                ? [session.listFiles()]
+                : cmd.arguments.map((arg) => session.listFiles(arg));
+
+            const content = res
+                .map((v) =>
+                    v.ok
+                        ? v.value
+                            .filter((v) => showAll || !v.startsWith("."))
+                            .join("\n")
+                        : v.error
+                ).join("\n");
+            return Ok({
+                redirects,
+                content,
+            });
         }
         case "touch": {
-            if (args.length === 0) {
-                return "touch: missing file operand";
+            if (cmd.arguments.length === 0) {
+                return Err("touch: missing file operand");
             }
-            for (const fn of args) {
-                session.touch(fn);
+            for (const file of cmd.arguments) {
+                session.touch(file);
             }
-            return "";
+            return Ok({ redirects, content: "" });
         }
         case "cat": {
-            if (args.length === 0) {
-                return "cat: missing file operand";
+            if (cmd.arguments.length === 0) {
+                return Err("cat: missing file operand");
             }
-            return args.map((v) => {
-                const r = session.cat(v);
-                return r.ok ? r.value : r.error;
-            }).reduce((acc, v) => acc + "\n" + v);
+            const content = cmd.arguments
+                .map((v) => session.cat(v))
+                .map((r) => r.ok ? r.value : `cat: ${r.error}`)
+                .reduce((acc, v) => acc + "\n" + v);
+            return Ok({
+                content,
+                redirects,
+            });
         }
         case "echo": {
-            if (args.length === 0) {
-                return "\n";
+            if (cmd.arguments.length === 0) {
+                return Ok({ redirects, content: "\n" });
             }
-            return args[0];
+            return Ok({ redirects, content: cmd.arguments.join(" ") + "\n" });
         }
         case "clear": {
             metaCmds.clear?.();
-            return "";
+            return Ok({ redirects, content: "" });
         }
     }
 }
