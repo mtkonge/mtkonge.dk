@@ -11,7 +11,7 @@ import { KeyEvent, Ui } from "./ui.ts";
 const username = "guest";
 const commandHistory: string[] = [];
 let commandHistoryIndex = 0;
-
+let lastKnownCommand = "";
 
 function autoCompleteMatches(
     input: string,
@@ -106,7 +106,7 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
             commandHistory.push(event.input);
             return actions;
         }
-        
+
         if (res.value.tag === "empty_cmd") {
             actions.push({tag: "add_history_item", output: ""});
             return actions;
@@ -166,6 +166,9 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         if (commandHistoryIndex >= commandHistory.length) {
             return actions;
         }
+        if (commandHistoryIndex === 0) {
+            lastKnownCommand = event.input;
+        }
         commandHistoryIndex++;
         const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
         actions.push({tag: "set_input_value", value: cmd});
@@ -173,7 +176,7 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         return actions;
     } else if (event.key === "ArrowDown") {
         if (commandHistoryIndex === 1) {
-            actions.push({tag: "clear_input"}); // TODO: change to currently editing text
+            actions.push({tag: "set_input_value", value: lastKnownCommand}); // TODO: change to currently editing text
             commandHistoryIndex--;
             return actions;
         }
