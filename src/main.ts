@@ -390,9 +390,7 @@ function addHistoryItem(output: string) {
 }
 
 function clearHistory() {
-    for (const child of history.children) {
-        history.removeChild(child);
-    }
+    history.replaceChildren();
 }
 
 function setInputMaxLength() {
