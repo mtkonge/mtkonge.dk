@@ -51,7 +51,6 @@ export class Ui {
         const userPrefixClone = this.userPrefix.cloneNode(
             true,
         ) as HTMLDivElement;
-        userPrefixClone.id = "";
 
         const command = document.createElement("div");
         command.textContent = this.input.value;
@@ -67,8 +66,11 @@ export class Ui {
         const historyItem = document.createElement("div");
         historyItem.classList.add("history-list");
 
-        historyItem.appendChild(userAndCommand);
-        historyItem.appendChild(outputElement);
+        historyItem.append(userAndCommand, outputElement);
+
+        for (const descendant of historyItem.querySelectorAll("[id]")) {
+            descendant.id = "";
+        }
 
         this.history.appendChild(historyItem);
 
