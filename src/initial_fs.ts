@@ -1,4 +1,9 @@
-import { Dir, dirChildren, linkDirTreeOrphans, fileChildren } from "./file_system.ts";
+import {
+    Dir,
+    dirChildren,
+    fileChildren,
+    linkDirTreeOrphans,
+} from "./file_system.ts";
 
 async function loadTextFile(path: string): Promise<string> {
     const response = await fetch(path);
@@ -28,9 +33,8 @@ export async function root(username: string): Promise<Dir> {
             },
         }),
     };
-    
+
     linkDirTreeOrphans(root, null);
 
     return root;
 }
-

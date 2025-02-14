@@ -1,4 +1,4 @@
-import { Argument, Token } from "./lexer.ts";
+import { Argument, CommandLexer } from "./lexer.ts";
 import { Err, Ok, Result } from "./results.ts";
 
 export type Redirect = {
@@ -15,34 +15,25 @@ export type Cmd = {
 };
 
 export class CommandParser {
-    private currentIndex = 0;
-
-    public constructor(private tokens: Token[]) {
-    }
-
-    public done(): boolean {
-        return this.currentIndex >= this.tokens.length;
-    }
-
-    private current(): Token {
-        return this.tokens[this.currentIndex];
-    }
-
-    private step() {
-        if (this.done()) {
-            return;
-        }
-        this.currentIndex++;
+    public constructor(private lexer: CommandLexer) {
     }
 
     private eatArgument(): Result<Argument, string> {
-        const { value: token, index } = this.current();
+        const res = this.lexer.next();
+        if (!res.ok) {
+            return res;
+        }
+        if (res.value === null) {
+            return Err(
+                "expected argument, got null",
+            );
+        }
+        const { value: token, index } = res.value;
         if (token.tag !== "argument") {
             return Err(
                 `expected argument at ${index}, got '${token.tag}'`,
             );
         }
-        this.step();
         return Ok(token);
     }
 
@@ -54,17 +45,23 @@ export class CommandParser {
             short_options: [],
             arguments: [],
         };
-        if (this.done()) {
-            return Ok(cmd);
-        }
         const binRes = this.eatArgument();
         if (!binRes.ok) {
             return binRes;
         }
+        if (binRes.value === null) {
+            return Ok(cmd);
+        }
         cmd.bin = binRes.value.argument;
-        while (!this.done()) {
-            const { value: current } = this.current();
-            this.step();
+        while (true) {
+            const tokenRes = this.lexer.next();
+            if (!tokenRes.ok) {
+                return tokenRes;
+            }
+            if (tokenRes.value === null) {
+                return Ok(cmd);
+            }
+            const current = tokenRes.value.value;
             switch (current.tag) {
                 case "long_option": {
                     cmd.long_options.push(current.option);
@@ -102,6 +99,5 @@ export class CommandParser {
                 }
             }
         }
-        return Ok(cmd);
     }
 }

@@ -1,6 +1,8 @@
 {
     "tasks": {
-      "bundle": "deno run --check --allow-read --allow-write --allow-env --allow-run bundle.ts"
+      "bundle": "deno run --allow-read --allow-write --allow-env --allow-run bundle.ts",
+      "dev": "deno run --allow-net --allow-read --allow-write --allow-env --allow-run dev.ts",
+      "check": "deno lint && deno check src"
     },
     "compilerOptions": {
         "checkJs": false,
