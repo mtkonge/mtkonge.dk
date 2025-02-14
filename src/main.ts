@@ -447,8 +447,10 @@ async function main() {
             ui.executeActions(await uiKeyEvent(session, event)),
     });
 
+    const catCmd = "cat motd.txt";
     const catOutput = await (async () => {
-        const res = await runCommand("cat motd.txt", {}, session);
+        const res = await runCommand(catCmd, {}, session);
+        commandHistory.push(catCmd);
         if (!res.ok) throw new Error("unreachable: valid cat command");
         if (res.value.tag !== "cmd") {
             throw new Error("unreachable: valid cat command");
@@ -456,7 +458,11 @@ async function main() {
         return res.value.content;
     })();
 
-    ui.executeActions([{ tag: "add_history_item", output: catOutput }]);
+    ui.executeActions([
+        { tag: "set_input_value", value: catCmd },
+        { tag: "add_history_item", output: catOutput },
+        { tag: "clear_input" },
+    ]);
 }
 
 main();
