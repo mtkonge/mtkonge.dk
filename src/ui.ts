@@ -4,7 +4,6 @@ export type UiAction =
     | { tag: "clear_history" }
     | { tag: "clear_input" };
 
-
 export type KeyEvent = {
     key: string;
     input: string;
@@ -40,9 +39,9 @@ export class Ui {
                     ctrl: event.ctrlKey,
                     input: this.input.value,
                     preventDefault: () => event.preventDefault(),
-                })
-                updatePrompt((cwd) => this.updatePromptAndInput(cwd))
-            }
+                });
+                updatePrompt((cwd) => this.updatePromptAndInput(cwd));
+            },
         );
 
         addEventListener("click", () => this.input.focus());
@@ -80,23 +79,21 @@ export class Ui {
         this.history.replaceChildren();
     }
 
-    private executeAction(action: UiAction): void {
+    private executeAction(action: UiAction): null {
         switch (action.tag) {
             case "add_history_item":
                 this.addHistoryItem(action.output);
-                break;
+                return null;
             case "clear_history": {
                 this.clearHistory();
-                break;
+                return null;
             }
             case "set_input_value":
                 this.input.value = action.value;
-                break;
+                return null;
             case "clear_input":
                 this.input.value = "";
-                break;
-            default:
-                throw new Error("unreachable: should handle all actions")
+                return null;
         }
     }
 

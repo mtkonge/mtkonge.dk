@@ -52,6 +52,10 @@ function fullDirPathString(node: Dir): string {
     return `${fullDirPathString(node.parent)}/${node.name}`;
 }
 
+type ParentFromPath =
+    | { tag: "root"; root: Dir }
+    | { tag: "file"; filename: string; parent: Dir };
+
 export class Session {
     private cwdDir: Dir;
 
@@ -96,7 +100,10 @@ export class Session {
         if (!res.ok) {
             return res;
         }
-        const [name, parent] = res.value;
+        if (res.value.tag === "root") {
+            return Err(`${path}: File exists`);
+        }
+        const { filename: name, parent } = res.value;
         const file = parent.children.get(name);
         if (!file) {
             const child: File = { tag: "file", name, content: "" };
@@ -139,6 +146,9 @@ export class Session {
         const segments = lexPath(path);
         const filename = segments.pop();
         if (!filename) {
+            if (path === "/") {
+                return Err(`${path}: File exists`);
+            }
             throw new Error("unreachable: path cannot be empty");
         }
 
@@ -177,8 +187,11 @@ export class Session {
         if (!res.ok) {
             return Err(`'${path}': No such file or directory`);
         }
+        if (res.value.tag === "root") {
+            return Ok(undefined);
+        }
 
-        const [name, parent] = res.value;
+        const { filename: name, parent } = res.value;
         if (!parent.children.has(name)) {
             parent.children.set(name, {
                 tag: "file",
@@ -245,26 +258,29 @@ export class Session {
 
     private getParentFromPath(
         path: string,
-    ): Result<[string, Dir], string> {
+    ): Result<ParentFromPath, string> {
         const segments = lexPath(path);
         const filename = segments.pop();
         if (!filename) {
+            if (path === "/") {
+                return Ok({ tag: "root", root: this.root });
+            }
             throw new Error("unreachable: path cannot be empty");
         }
 
-        let node = this.nodeRootFromPath(path);
+        let parent = this.nodeRootFromPath(path);
         for (const segment of segments) {
-            const res = this.getNodeFromPathSegment(node, segment);
+            const res = this.getNodeFromPathSegment(parent, segment);
             if (!res.ok) {
                 return Err(`${path}: No such file or directory`);
             }
             if (res.value.tag === "file") {
                 return Err(`${path}: Not a directory`);
             }
-            node = res.value;
+            parent = res.value;
         }
 
-        return Ok([filename, node]);
+        return Ok({ tag: "file", filename, parent });
     }
 
     private getChildFromPath(
@@ -272,7 +288,8 @@ export class Session {
     ): Result<Dir | File, string> {
         const res = this.getParentFromPath(path);
         if (!res.ok) return res;
-        const [filename, parent] = res.value;
+        if (res.value.tag === "root") return Ok(this.root);
+        const { filename, parent } = res.value;
 
         const child = parent.children.get(filename);
         if (!child) {

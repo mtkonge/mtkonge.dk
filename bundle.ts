@@ -31,9 +31,9 @@ async function copyPublic(path: string[] = []) {
 export async function bundle() {
     await copyPublic();
     await bundleTs();
-    console.log("success: output in 'dist/'");
 }
 
 if (import.meta.main) {
     await bundle();
+    console.log("success: output in 'dist/'");
 }
