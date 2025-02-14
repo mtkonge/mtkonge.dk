@@ -2,7 +2,15 @@
   margin: 0;
   font-size: 20px;
   font-family: 'Ubuntu Mono', monospace;
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
+
 
 span, .history-list {
   white-space: pre; /*enable whitespace*/

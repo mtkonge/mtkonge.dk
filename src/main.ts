@@ -115,7 +115,11 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
             input.value = "";
             return;
         }
-
+        if (res.value.tag === "empty_cmd") {
+            addHistoryItem("");
+            return;
+        }
+        
         const output = res.value;
         if (output.redirects.length === 0) {
             addHistoryItem(res.value.content);
@@ -233,6 +237,7 @@ session.cd(`/home/${username}`);
 addHistoryItem((() => {
     const res = runCommand("cat welcome.txt");
     if (!res.ok) throw new Error("unreachable: valid cat command");
+    if (res.value.tag !== "cmd") throw new Error("unreachable: valid cat command");
     return res.value.content;
 })());
 
@@ -240,10 +245,9 @@ type MetaCmds = {
     clear?(): void;
 };
 
-type Output = {
-    redirects: Redirect[];
-    content: string;
-};
+type Output = 
+| { tag: "cmd", redirects: Redirect[], content: string, }
+| { tag: "empty_cmd", };
 
 function runCommand(
     command: string,
@@ -272,12 +276,16 @@ function runCommand(
     const cmd = parseRes.value;
     const redirects = cmd.redirects;
 
+    if (cmd.bin === "") {
+        return Ok({tag: "empty_cmd"})
+    }
+
     if (!rawCmdIsCmd(cmd.bin)) {
         return Err(`${cmd.bin}: Command not found`);
     }
     switch (cmd.bin) {
         case "pwd":
-            return Ok({ redirects, content: session.pwd() });
+            return Ok({ tag: "cmd", redirects, content: session.pwd() });
         case "cd": {
             if (cmd.arguments.length > 1) {
                 return Err("cd: too many arguments");
@@ -288,7 +296,7 @@ function runCommand(
                 return Err(`cd: ${res.error}`);
             }
 
-            return Ok({ redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: "" });
         }
         case "mkdir": {
             if (cmd.arguments.length === 0) {
@@ -305,7 +313,7 @@ function runCommand(
                 }
             }
 
-            return Ok({ redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: "" });
         }
         case "ls": {
             const showAll = cmd.short_options.includes("a") ||
@@ -323,7 +331,7 @@ function runCommand(
                             .join("\n")
                         : v.error
                 ).join("\n");
-            return Ok({
+            return Ok({ tag: "cmd",
                 redirects,
                 content,
             });
@@ -335,7 +343,7 @@ function runCommand(
             for (const file of cmd.arguments) {
                 session.touch(file);
             }
-            return Ok({ redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: "" });
         }
         case "cat": {
             if (cmd.arguments.length === 0) {
@@ -345,20 +353,20 @@ function runCommand(
                 .map((v) => session.cat(v))
                 .map((r) => r.ok ? r.value : `cat: ${r.error}`)
                 .reduce((acc, v) => acc + "\n" + v);
-            return Ok({
+            return Ok({ tag: "cmd",
                 content,
                 redirects,
             });
         }
         case "echo": {
             if (cmd.arguments.length === 0) {
-                return Ok({ redirects, content: "\n" });
+                return Ok({ tag: "cmd", redirects, content: "\n" });
             }
-            return Ok({ redirects, content: cmd.arguments.join(" ") + "\n" });
+            return Ok({ tag: "cmd", redirects, content: cmd.arguments.join(" ") + "\n" });
         }
         case "clear": {
             metaCmds.clear?.();
-            return Ok({ redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: "" });
         }
     }
 }
@@ -385,6 +393,8 @@ function addHistoryItem(output: string) {
     historyItem.appendChild(outputElement);
 
     history.appendChild(historyItem);
+
+    scrollTo(0, document.body.scrollHeight);
 
     commandHistory.push(input.value);
 }
