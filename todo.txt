@@ -1,7 +1,2 @@
-tabbing for command args
-string parsing
-a way to write to a file
-
 implement commands:
     xdg-open
-    rm

@@ -66,6 +66,7 @@ function requestAutoComplete(
         case "mkdir":
         case "ls":
         case "touch":
+        case "rm":
         case "cat": {
             const fileSeperator = last.lastIndexOf("/");
             const path = fileSeperator !== -1
@@ -94,6 +95,56 @@ function requestAutoComplete(
 
 function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
     const actions: UiAction[] = [];
+    if (event.ctrl && event.key === "c") {
+        actions.push({ tag: "add_history_item", output: "" });
+        actions.push({ tag: "clear_input" });
+        return actions;
+    }
+    if (event.key === "Tab") {
+        const [cmd, ...args] = event.input.trimStart().split(/\s+/g);
+        const last = args.pop();
+        const options = requestAutoComplete(session, cmd, last);
+        if (options.length === 1) {
+            const option = options[0];
+            const idx = event.input.lastIndexOf(last ?? cmd);
+            const selected = event.input.substring(0, idx) + option;
+            actions.push({ tag: "set_input_value", value: selected });
+        } else if (options.length > 1) {
+            actions.push({
+                tag: "add_history_item",
+                output: options.join("\n"),
+            });
+        }
+        event.preventDefault();
+        return actions;
+    }
+    if (event.key === "ArrowUp") {
+        if (commandHistoryIndex >= commandHistory.length) {
+            return actions;
+        }
+        if (commandHistoryIndex === 0) {
+            lastKnownCommand = event.input;
+        }
+        commandHistoryIndex++;
+        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
+        actions.push({ tag: "set_input_value", value: cmd });
+        event.preventDefault();
+        return actions;
+    } else if (event.key === "ArrowDown") {
+        if (commandHistoryIndex === 1) {
+            actions.push({ tag: "set_input_value", value: lastKnownCommand });
+            commandHistoryIndex--;
+            return actions;
+        }
+        if (commandHistoryIndex === 0) {
+            return actions;
+        }
+        commandHistoryIndex--;
+        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
+        actions.push({ tag: "set_input_value", value: cmd });
+        event.preventDefault();
+        return actions;
+    }
     if (event.key === "Enter") {
         let shouldClear = false;
 
@@ -151,56 +202,6 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         actions.push({ tag: "clear_input" });
         return actions;
     }
-    if (event.ctrl && event.key === "c") {
-        actions.push({ tag: "add_history_item", output: "" });
-        actions.push({ tag: "clear_input" });
-        return actions;
-    }
-    if (event.key === "Tab") {
-        const [cmd, ...args] = event.input.trimStart().split(/\s+/g);
-        const last = args.pop();
-        const options = requestAutoComplete(session, cmd, last);
-        if (options.length === 1) {
-            const option = options[0];
-            const idx = event.input.lastIndexOf(last ?? cmd);
-            const selected = event.input.substring(0, idx) + option;
-            actions.push({ tag: "set_input_value", value: selected });
-        } else if (options.length > 1) {
-            actions.push({
-                tag: "add_history_item",
-                output: options.join("\n"),
-            });
-        }
-        event.preventDefault();
-        return actions;
-    }
-    if (event.key === "ArrowUp") {
-        if (commandHistoryIndex >= commandHistory.length) {
-            return actions;
-        }
-        if (commandHistoryIndex === 0) {
-            lastKnownCommand = event.input;
-        }
-        commandHistoryIndex++;
-        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
-        actions.push({ tag: "set_input_value", value: cmd });
-        event.preventDefault();
-        return actions;
-    } else if (event.key === "ArrowDown") {
-        if (commandHistoryIndex === 1) {
-            actions.push({ tag: "set_input_value", value: lastKnownCommand });
-            commandHistoryIndex--;
-            return actions;
-        }
-        if (commandHistoryIndex === 0) {
-            return actions;
-        }
-        commandHistoryIndex--;
-        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
-        actions.push({ tag: "set_input_value", value: cmd });
-        event.preventDefault();
-        return actions;
-    }
     return [];
 }
 
@@ -244,6 +245,24 @@ function runCommand(
             const res = session.cd(cmd.arguments.pop() ?? "");
             if (!res.ok) {
                 return Err(`cd: ${res.error}`);
+            }
+
+            return Ok({ tag: "cmd", redirects, content: "" });
+        }
+        case "rm": {
+            if (cmd.arguments.length === 0) {
+                return Err("rm: missing operand");
+            }
+
+            const recursive = cmd.long_options.includes("recursive") ||
+                cmd.short_options.includes("r") ||
+                cmd.short_options.includes("R");
+
+            for (const dir of cmd.arguments) {
+                const res = session.rm(dir, recursive);
+                if (!res.ok) {
+                    return Err(`rm: ${res.error}`);
+                }
             }
 
             return Ok({ tag: "cmd", redirects, content: "" });

@@ -9,6 +9,7 @@ const cmds = [
     "cat",
     "echo",
     "clear",
+    "rm",
 ] as const;
 
 export function validCmds(): string[] {

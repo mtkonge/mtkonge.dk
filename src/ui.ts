@@ -98,8 +98,39 @@ export class Ui {
     }
 
     private updatePromptAndInput(cwd: string) {
-        const label = document.querySelector("#terminal-input-label")!;
-        label.textContent = this.input.value;
+        const termContent = document.querySelector("#terminal-input-content");
+        if (!termContent) throw new Error("unreachable: defined in index.html");
+        termContent.textContent = this.input.value;
+        const cursorPadding = document.querySelector(
+            "#terminal-input-cursor-padding",
+        );
+        if (!cursorPadding) {
+            throw new Error("unreachable: defined in index.html");
+        }
+        const contentUntilSelection = this.input.value.substring(
+            0,
+            this.input.selectionStart ?? this.input.value.length,
+        );
+        cursorPadding.textContent = contentUntilSelection;
+        const cursorSelection = document.querySelector(
+            "#terminal-input-cursor-selection",
+        );
+        if (!cursorSelection) {
+            throw new Error("unreachable: defined in index.html");
+        }
+        const cursorWidth = (this.input.selectionEnd ?? 0) -
+            (this.input.selectionStart ?? 0);
+        if (cursorWidth > 0) {
+            cursorSelection.classList.add("block");
+            const selectedInput = this.input.value.substring(
+                this.input.selectionStart ?? 0,
+                this.input.selectionEnd ?? this.input.value.length,
+            );
+            cursorSelection.textContent = selectedInput;
+        } else {
+            cursorSelection.classList.remove("block");
+            cursorSelection.textContent = "_";
+        }
         const userCwd = document.querySelector<HTMLDivElement>("#dir")!;
         userCwd.innerText = cwd;
     }

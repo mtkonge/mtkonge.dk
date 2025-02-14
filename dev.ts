@@ -22,15 +22,18 @@ async function check() {
 
 async function watchAndBundle(addr: Addr) {
     let changeOccurred = true;
+    let running = false;
     setInterval(async () => {
-        if (!changeOccurred) {
+        if (!changeOccurred || running) {
             return;
         }
+        running = true;
         console.clear();
         await bundle().catch((err) => console.error(err));
         await check();
         listening(addr);
         changeOccurred = false;
+        running = false;
     }, 250);
     const watcher = Deno.watchFs(["src", "public"]);
     for await (const _ of watcher) {

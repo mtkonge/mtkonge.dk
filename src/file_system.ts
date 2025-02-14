@@ -116,6 +116,38 @@ export class Session {
         return Ok(file);
     }
 
+    public rm(path: string, recursive: boolean): Result<undefined, string> {
+        const res = this.getParentFromPath(path);
+        if (!res.ok) {
+            return res;
+        }
+        if (res.value.tag === "root") {
+            if (!recursive) {
+                return Err(`${path}: Is a directory`);
+            }
+            // (2001: A Space Odyssey)
+            return Err(`${path}: I'm sorry, Dave. I'm afraid I can't do that.`);
+        }
+        const { filename, parent } = res.value;
+        const file = parent.children.get(filename);
+        if (!file) {
+            return Err(`${path}: No such file or directory`);
+        }
+        if (file.tag === "dir" && !recursive) {
+            return Err(`${path}: Is a directory`);
+        }
+        const isImportantDirectory = file === this.root.children.get("home") ||
+            file === this.userDir();
+        if (isImportantDirectory) {
+            // (2001: A Space Odyssey)
+            return Err(
+                `${path}: I'm sorry, Dave. I'm afraid I can't do that.`,
+            );
+        }
+        parent.children.delete(filename);
+        return Ok(undefined);
+    }
+
     private createDir(name: string, parent: Dir): Dir {
         const dir: Dir = {
             tag: "dir",
