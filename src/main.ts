@@ -1,4 +1,9 @@
-import { rawCmdIsCmd, validCmds } from "./cmd_validation.ts";
+import { concatBytes, stringToBytes } from "./bytes.ts";
+import {
+    assertMotdIncludesCmd,
+    rawCmdIsCmd,
+    validCmds,
+} from "./cmd_validation.ts";
 import { Session } from "./file_system.ts";
 import { root } from "./initial_fs.ts";
 import { CommandLexer } from "./lexer.ts";
@@ -51,6 +56,7 @@ function autoCompleteMatches(
 function requestAutoComplete(
     session: Session,
     cmd: string,
+    redirecting: boolean,
     last: string | undefined,
 ): string[] {
     if (last === undefined) {
@@ -62,38 +68,46 @@ function requestAutoComplete(
         return [];
     }
     switch (cmd) {
+        case "pwd":
+        case "wget":
+        case "echo":
+        case "clear": {
+            if (!redirecting) {
+                return [];
+            }
+            break;
+        }
         case "cd":
         case "mkdir":
         case "ls":
         case "touch":
+        case "xdg-open":
         case "rm":
-        case "cat": {
-            const fileSeperator = last.lastIndexOf("/");
-            const path = fileSeperator !== -1
-                ? last.substring(0, fileSeperator + 1)
-                : undefined;
-            const filename = fileSeperator !== -1
-                ? last.substring(fileSeperator + 1)
-                : last;
-            const files = session.listFiles(path);
-            if (!files.ok) {
-                return [];
-            }
-            const res = autoCompleteMatches(
-                filename,
-                files.value,
-            );
-            return res.map((v) => path !== undefined ? path + v : v);
-        }
-        case "pwd":
-        case "echo":
-        case "clear": {
-            return [];
-        }
+        case "cat":
+            break;
     }
+    const fileSeperator = last.lastIndexOf("/");
+    const path = fileSeperator !== -1
+        ? last.substring(0, fileSeperator + 1)
+        : undefined;
+    const filename = fileSeperator !== -1
+        ? last.substring(fileSeperator + 1)
+        : last;
+    const files = session.listFiles(path);
+    if (!files.ok) {
+        return [];
+    }
+    const res = autoCompleteMatches(
+        filename,
+        files.value,
+    );
+    return res.map((v) => path !== undefined ? path + v : v);
 }
 
-function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
+async function uiKeyEvent(
+    session: Session,
+    event: KeyEvent,
+): Promise<UiAction[]> {
     const actions: UiAction[] = [];
     if (event.ctrl && event.key === "c") {
         actions.push({ tag: "add_history_item", output: "" });
@@ -101,9 +115,10 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         return actions;
     }
     if (event.key === "Tab") {
-        const [cmd, ...args] = event.input.trimStart().split(/\s+/g);
+        const [cmd, ...args] = event.input.trimStart().split(/[\s>]+/g);
         const last = args.pop();
-        const options = requestAutoComplete(session, cmd, last);
+        const redirecting = />?>\s*\S*$/.test(event.input);
+        const options = requestAutoComplete(session, cmd, redirecting, last);
         if (options.length === 1) {
             const option = options[0];
             const idx = event.input.lastIndexOf(last ?? cmd);
@@ -148,7 +163,7 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
     if (event.key === "Enter") {
         let shouldClear = false;
 
-        const res = runCommand(event.input, {
+        const res = await runCommand(event.input, {
             clear() {
                 shouldClear = true;
             },
@@ -187,9 +202,18 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
                 }
                 const file = res.value;
                 if (redirect.tag === "write") {
-                    file.content = output.content;
+                    file.content = {
+                        tag: "dynamic",
+                        data: stringToBytes(output.content),
+                    };
                 } else if (redirect.tag === "append") {
-                    file.content += output.content;
+                    file.content = {
+                        tag: "dynamic",
+                        data: concatBytes(
+                            file.content.data,
+                            new TextEncoder().encode(output.content),
+                        ),
+                    };
                 }
             }
             actions.push({ tag: "add_history_item", output: "" });
@@ -213,11 +237,64 @@ type Output =
     | { tag: "cmd"; redirects: Redirect[]; content: string }
     | { tag: "empty_cmd" };
 
-function runCommand(
+type WgetOutput =
+    | { tag: "error"; message: string }
+    | { tag: "success"; message: string };
+
+async function wget(session: Session, url: string): Promise<WgetOutput> {
+    const response = await fetch(`/bin/wget?url=${encodeURIComponent(url)}`)
+        .then((r) =>
+            r
+                .bytes()
+                .then((content) => ({
+                    tag: "success",
+                    content,
+                } as const))
+        )
+        .catch((v) => ({
+            tag: "error",
+            message: `wget: could not fetch url '${url}': ${v}`,
+        } as const));
+    if (response.tag === "error") {
+        return response;
+    }
+    const { content } = response;
+    const maybeFilename = url.split("/").pop();
+    const filename = maybeFilename ? maybeFilename : "index.html";
+    let tempFilename = filename;
+    let tempFileSuffix = 1;
+    while (true) {
+        if (session.dirOrFileExists(tempFilename)) {
+            tempFilename = `${filename}.${tempFileSuffix}`;
+            tempFileSuffix += 1;
+            continue;
+        }
+
+        const file = session.createOrOpenFile(
+            tempFilename,
+        );
+        if (!file.ok) {
+            throw new Error(
+                `unreachable: asserted that dir or file does not exist at '${tempFilename}'`,
+            );
+        }
+        file.value.content = {
+            tag: "static",
+            url: url,
+            data: content,
+        };
+        return {
+            tag: "success",
+            message: `wget: created '${tempFilename}'`,
+        };
+    }
+}
+
+async function runCommand(
     command: string,
     metaCmds: MetaCmds,
     session: Session,
-): Result<Output, string> {
+): Promise<Result<Output, string>> {
     const lexer = new CommandLexer(command);
     const parseRes = new CommandParser(lexer).parse();
     if (!parseRes.ok) {
@@ -318,7 +395,7 @@ function runCommand(
             const content = cmd.arguments
                 .map((v) => session.cat(v))
                 .map((r) => r.ok ? r.value : `cat: ${r.error}`)
-                .reduce((acc, v) => acc + "\n" + v);
+                .join("\n");
             return Ok({ tag: "cmd", content, redirects });
         }
         case "echo": {
@@ -331,6 +408,26 @@ function runCommand(
                 content: cmd.arguments.join(" ") + "\n",
             });
         }
+        case "xdg-open": {
+            if (cmd.arguments.length === 0) {
+                return Err("xdg-open: missing file operand");
+            }
+            const content = cmd.arguments
+                .map((v) => session.xdgOpen(v))
+                .map((r) => r.ok ? null : `xdg-open: ${r.error}`)
+                .filter((v) => v !== null)
+                .join("\n");
+            return Ok({ tag: "cmd", redirects, content });
+        }
+        case "wget": {
+            if (cmd.arguments.length === 0) {
+                return Err("wget: missing url operand");
+            }
+            const content = await Promise.all(
+                cmd.arguments.map((url) => wget(session, url)),
+            ).then((response) => response.map((v) => v.message).join("\n"));
+            return Ok({ tag: "cmd", redirects, content });
+        }
         case "clear": {
             metaCmds.clear?.();
             return Ok({ tag: "cmd", redirects, content: "" });
@@ -339,16 +436,19 @@ function runCommand(
 }
 
 async function main() {
+    await assertMotdIncludesCmd();
+
     const session = new Session(await root(username), username);
     session.cd(`/home/${username}`);
 
     const ui = new Ui({
         updatePrompt: (update) => update(session.cwdString()),
-        keyListener: (event) => ui.executeActions(uiKeyEvent(session, event)),
+        keyListener: async (event) =>
+            ui.executeActions(await uiKeyEvent(session, event)),
     });
 
-    const catOutput = (() => {
-        const res = runCommand("cat welcome.txt", {}, session);
+    const catOutput = await (async () => {
+        const res = await runCommand("cat motd.txt", {}, session);
         if (!res.ok) throw new Error("unreachable: valid cat command");
         if (res.value.tag !== "cmd") {
             throw new Error("unreachable: valid cat command");

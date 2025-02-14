@@ -11,6 +11,7 @@
     "jsr:@std/http@*": "1.0.13",
     "jsr:@std/media-types@^1.1.0": "1.1.0",
     "jsr:@std/net@^1.0.4": "1.0.4",
+    "jsr:@std/path@*": "1.0.8",
     "jsr:@std/path@^1.0.6": "1.0.8",
     "jsr:@std/path@^1.0.8": "1.0.8",
     "jsr:@std/streams@^1.0.9": "1.0.9",
@@ -164,5 +165,9 @@
         "@esbuild/win32-x64"
       ]
     }
+  },
+  "remote": {
+    "https://deno.land/x/mimetypes@v1.0.0/mod.ts": "abd1ea614b32cfa7fd50b46f6e070617696664698b8a34935dc807f3035ad408",
+    "https://deno.land/x/mimetypes@v1.0.0/src/mime.ts": "7cd7590eae6127dc1abfe710900fc749e94d5c715ffe8a148e59fe20ee21a9a5"
   }
 }

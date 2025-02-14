@@ -54,7 +54,7 @@ export class Ui {
         userPrefixClone.id = "";
 
         const command = document.createElement("div");
-        command.innerHTML = this.input.value;
+        command.textContent = this.input.value;
 
         const userAndCommand = document.createElement("div");
         userAndCommand.classList.add("user-and-command");
@@ -62,7 +62,7 @@ export class Ui {
         userAndCommand.appendChild(command);
 
         const outputElement = document.createElement("div");
-        outputElement.innerHTML = output;
+        outputElement.textContent = output;
 
         const historyItem = document.createElement("div");
         historyItem.classList.add("history-list");
@@ -132,7 +132,7 @@ export class Ui {
             cursorSelection.textContent = "_";
         }
         const userCwd = document.querySelector<HTMLDivElement>("#dir")!;
-        userCwd.innerText = cwd;
+        userCwd.textContent = cwd;
     }
 
     public executeActions(actions: UiAction[]) {

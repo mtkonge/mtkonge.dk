@@ -1,9 +1,14 @@
+import { bytesToBase64 } from "./bytes.ts";
 import { Err, Ok, Result } from "./results.ts";
+
+export type FileContent =
+    | { tag: "dynamic"; data: Uint8Array }
+    | { tag: "static"; data: Uint8Array; url: string };
 
 export type File = {
     tag: "file";
     name: string;
-    content: string;
+    content: FileContent;
 };
 
 export type Dir = {
@@ -25,13 +30,33 @@ export function dirChildren(
     return map;
 }
 
+export type FileChild = {
+    content: string;
+    xdgResource: string | null;
+};
+
+export async function fetchFile(
+    path: string,
+): Promise<FileContent & { tag: "static" }> {
+    const response = await fetch(path);
+    return {
+        tag: "static",
+        url: path,
+        data: await response.bytes(),
+    };
+}
+
 export function fileChildren(
-    children: { [key: string]: string },
+    children: { [filename: string]: FileContent },
 ): Map<string, File> {
     const map = new Map<string, File>();
 
-    for (const key in children) {
-        map.set(key, { tag: "file", name: key, content: children[key] });
+    for (const name in children) {
+        map.set(name, {
+            tag: "file",
+            name,
+            content: children[name],
+        });
     }
 
     return map;
@@ -95,7 +120,10 @@ export class Session {
         return Ok(undefined);
     }
 
-    public createOrOpenFile(path: string): Result<File, string> {
+    public createOrOpenFile(
+        path: string,
+        data: Uint8Array = new Uint8Array(),
+    ): Result<File, string> {
         const res = this.getParentFromPath(path);
         if (!res.ok) {
             return res;
@@ -106,7 +134,14 @@ export class Session {
         const { filename: name, parent } = res.value;
         const file = parent.children.get(name);
         if (!file) {
-            const child: File = { tag: "file", name, content: "" };
+            const child: File = {
+                tag: "file",
+                name,
+                content: {
+                    tag: "dynamic",
+                    data,
+                },
+            };
             parent.children.set(name, child);
             return Ok(child);
         }
@@ -228,7 +263,7 @@ export class Session {
             parent.children.set(name, {
                 tag: "file",
                 name,
-                content: "",
+                content: { tag: "dynamic", data: new Uint8Array() },
             });
         }
         return Ok(undefined);
@@ -245,7 +280,46 @@ export class Session {
             return Err(`'${path}': Is a directory`);
         }
 
-        return Ok(file.content);
+        const decoded = new TextDecoder().decode(file.content.data);
+
+        return Ok(decoded);
+    }
+
+    public xdgOpen(path: string): Result<undefined, string> {
+        const res = this.getParentFromPath(path);
+        if (!res.ok) {
+            return Err(`'${path}': No such file or directory`);
+        }
+
+        if (res.value.tag === "root") {
+            return Err(`'${path}': Is a directory`);
+        }
+
+        const { filename, parent } = res.value;
+
+        const file = parent.children.get(filename);
+        if (file === undefined) {
+            return Err(`'${path}': No such file or directory`);
+        }
+        if (file.tag === "dir") {
+            return Err(`'${path}': Is a directory`);
+        }
+
+        const { content } = file;
+        switch (content.tag) {
+            case "dynamic": {
+                open(
+                    `/bin/xdg-open?filename=${
+                        encodeURIComponent(filename)
+                    }&data=${encodeURIComponent(bytesToBase64(content.data))}`,
+                );
+                return Ok(undefined);
+            }
+            case "static": {
+                open(content.url);
+                return Ok(undefined);
+            }
+        }
     }
 
     public listFiles(path?: string): Result<string[], string> {

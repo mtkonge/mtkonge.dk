@@ -1,16 +1,13 @@
 import {
     Dir,
     dirChildren,
+    fetchFile,
     fileChildren,
     linkDirTreeOrphans,
 } from "./file_system.ts";
 
-async function loadTextFile(path: string): Promise<string> {
-    const response = await fetch(path);
-    return await response.text();
-}
-
 export async function root(username: string): Promise<Dir> {
+    const motd = "motd.txt";
     const root: Dir = {
         tag: "dir",
         name: "/",
@@ -26,7 +23,7 @@ export async function root(username: string): Promise<Dir> {
                         name: username,
                         parent: null,
                         children: fileChildren({
-                            "welcome.txt": await loadTextFile("welcome.txt"),
+                            [motd]: await fetchFile(motd),
                         }),
                     },
                 }),
