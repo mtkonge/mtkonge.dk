@@ -45,7 +45,7 @@ body {
   display: flex;
 }
 
-#input-wrapper input {
+#input-wrapper label {
   text-decoration: none;
   border: none;
   background-color: transparent;
@@ -57,6 +57,17 @@ body {
   white-space: nowrap;
   text-overflow: ellipsis;
   padding: 0;
+}
+
+#input-wrapper input {
+  all: unset;
+  opacity: 0;
+}
+
+#input-wrapper input:focus + label::after {
+  content: "_";
+  font-weight: bold;
+  animation: blink 1s step-start infinite;
 }
 
 .user {

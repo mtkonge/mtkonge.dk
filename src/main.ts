@@ -1,28 +1,17 @@
 import { rawCmdIsCmd, validCmds } from "./cmd_validation.ts";
-import { fileChildren, Session } from "./file_system.ts";
-import { Dir, dirChildren, linkDirTreeOrphans } from "./file_system.ts";
+import { Session } from "./file_system.ts";
+import { root } from "./initial_fs.ts";
 import { CommandLexer } from "./lexer.ts";
 import { CommandParser, Redirect } from "./parser.ts";
 import { Err, Ok, Result } from "./results.ts";
 import "./style.css";
-
-const input = document.querySelector<HTMLInputElement>("#terminal-input")!;
-const cursor = document.querySelector<HTMLSpanElement>("#cursor")!;
-const history = document.querySelector<HTMLDivElement>("#history")!;
-const userPrefix = document.querySelector<HTMLDivElement>("#user")!;
-const dirElement = document.querySelector<HTMLDivElement>("#dir")!;
+import { UiAction } from "./ui.ts";
+import { KeyEvent, Ui } from "./ui.ts";
 
 const username = "guest";
 const commandHistory: string[] = [];
 let commandHistoryIndex = 0;
 
-input.addEventListener("input", updatePromptAndInput);
-input.addEventListener("keydown", updatePromptAndInput);
-input.addEventListener("keyup", updatePromptAndInput);
-input.addEventListener("focus", showCursor);
-input.addEventListener("blur", hideCursor);
-addEventListener("resize", setInputMaxLength);
-addEventListener("click", () => input.focus());
 
 function autoCompleteMatches(
     input: string,
@@ -60,7 +49,7 @@ function autoCompleteMatches(
     return [matches[0].substring(0, closestLength)];
 }
 
-function requestAutoComplete(cmd: string, last: string | undefined): string[] {
+function requestAutoComplete(session: Session, cmd: string, last: string | undefined): string[] {
     if (last === undefined) {
         if (rawCmdIsCmd(cmd)) {
             return [];
@@ -100,36 +89,41 @@ function requestAutoComplete(cmd: string, last: string | undefined): string[] {
     }
 }
 
-input.addEventListener("keydown", function (event: KeyboardEvent) {
+function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
+    const actions: UiAction[] = []; 
     if (event.key === "Enter") {
         let shouldClear = false;
 
-        const res = runCommand(input.value, {
+        const res = runCommand(event.input, {
             clear() {
                 shouldClear = true;
             },
-        });
+        }, session);
 
         if (!res.ok) {
-            addHistoryItem(res.error);
-            input.value = "";
-            return;
+            actions.push({tag: "add_history_item", output: res.error});
+            actions.push({tag: "clear_input"});
+            commandHistory.push(event.input);
+            return actions;
         }
+        
         if (res.value.tag === "empty_cmd") {
-            addHistoryItem("");
-            return;
+            actions.push({tag: "add_history_item", output: ""});
+            return actions;
         }
+
+        commandHistory.push(event.input);
         
         const output = res.value;
         if (output.redirects.length === 0) {
-            addHistoryItem(res.value.content);
+            actions.push({tag: "add_history_item", "output": res.value.content});
         } else {
             for (const redirect of output.redirects) {
                 const res = session.createOrOpenFile(redirect.target);
                 if (!res.ok) {
-                    addHistoryItem(`bash: ${res.error}`);
-                    input.value = "";
-                    return;
+                    actions.push({tag: "add_history_item", output: `bash: ${res.error}`});
+                    actions.push({tag: "clear_input"});
+                    return actions;
                 }
                 const file = res.value;
                 if (redirect.tag === "write") {
@@ -138,108 +132,64 @@ input.addEventListener("keydown", function (event: KeyboardEvent) {
                     file.content += output.content;
                 }
             }
-            addHistoryItem("");
+            actions.push({tag: "add_history_item", output: ""});
         }
 
         if (shouldClear) {
-            clearHistory();
+            actions.push({tag: "clear_history"})
         }
 
-        input.value = "";
-        updatePromptAndInput();
-    } else if (event.ctrlKey && event.key === "c") {
-        addHistoryItem("");
-        input.value = "";
-    } else if (event.key === "Tab") {
-        const [cmd, ...args] = input.value.trimStart().split(/\s+/g);
+        actions.push({tag: "clear_input"})
+        return actions;
+    }
+     if (event.ctrl && event.key === "c") {
+        actions.push({tag: "add_history_item", output: ""});
+        actions.push({tag: "clear_input"})
+        return actions;
+    }
+    if (event.key === "Tab") {
+        const [cmd, ...args] = event.input.trimStart().split(/\s+/g);
         const last = args.pop();
-        const options = requestAutoComplete(cmd, last);
+        const options = requestAutoComplete(session, cmd, last);
         if (options.length === 1) {
             const option = options[0];
-            const idx = input.value.lastIndexOf(last ?? cmd);
-            input.value = input.value.substring(0, idx) + option;
+            const idx = event.input.lastIndexOf(last ?? cmd);
+            const selected = event.input.substring(0, idx) + option;
+            actions.push({tag: "set_input_value", value: selected})
         } else if (options.length > 1) {
-            addHistoryItem(options.join("\n"));
+            actions.push({tag: "add_history_item", output: options.join("\n")});
         }
         event.preventDefault();
-    } else if (event.key === "ArrowUp") {
+        return actions;
+    } 
+     if (event.key === "ArrowUp") {
         if (commandHistoryIndex >= commandHistory.length) {
-            return;
+            return actions;
         }
-
         commandHistoryIndex++;
-
-        input.value =
-            commandHistory[commandHistory.length - commandHistoryIndex];
-        updateCursorPos(input.value.length);
-
+        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
+        actions.push({tag: "set_input_value", value: cmd});
         event.preventDefault();
+        return actions;
     } else if (event.key === "ArrowDown") {
         if (commandHistoryIndex === 1) {
-            input.value = ""; // TODO change to currently editing text
-
+            actions.push({tag: "clear_input"}); // TODO: change to currently editing text
             commandHistoryIndex--;
-
-            return;
+            return actions;
         }
-
         if (commandHistoryIndex === 0) {
-            return;
+            return actions;
         }
-
         commandHistoryIndex--;
-
-        input.value =
-            commandHistory[commandHistory.length - commandHistoryIndex];
-        updateCursorPos(input.value.length);
-
+        const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
+        actions.push({tag: "set_input_value", value: cmd});
         event.preventDefault();
+        return actions;
     }
-});
-
-async function loadTextFile(path: string): Promise<string> {
-    const response = await fetch(path);
-    return await response.text();
+    return [];
 }
 
-function updateCursorPos(pos: number) {
-    input.setSelectionRange(pos, pos);
-    updatePromptAndInput();
-}
 
-const root: Dir = {
-    tag: "dir",
-    name: "/",
-    parent: null,
-    children: dirChildren({
-        "home": {
-            tag: "dir",
-            name: "home",
-            parent: null,
-            children: dirChildren({
-                [username]: {
-                    tag: "dir",
-                    name: username,
-                    parent: null,
-                    children: fileChildren({
-                        "welcome.txt": await loadTextFile("welcome.txt"),
-                    }),
-                },
-            }),
-        },
-    }),
-};
-
-linkDirTreeOrphans(root, null);
-
-const session = new Session(root, username);
-session.cd(`/home/${username}`);
-addHistoryItem((() => {
-    const res = runCommand("cat welcome.txt");
-    if (!res.ok) throw new Error("unreachable: valid cat command");
-    if (res.value.tag !== "cmd") throw new Error("unreachable: valid cat command");
-    return res.value.content;
-})());
 
 type MetaCmds = {
     clear?(): void;
@@ -251,7 +201,8 @@ type Output =
 
 function runCommand(
     command: string,
-    metaCmds: MetaCmds = {},
+    metaCmds: MetaCmds,
+    session: Session,
 ): Result<Output, string> {
     const lexer = new CommandLexer(command);
     const tokens = [];
@@ -371,77 +322,24 @@ function runCommand(
     }
 }
 
-function addHistoryItem(output: string) {
-    const userPrefixClone = userPrefix.cloneNode(true) as HTMLDivElement;
-    userPrefixClone.id = "";
 
-    const command = document.createElement("div");
-    command.innerHTML = input.value;
+async function main() {
+    const session = new Session(await root(username), username);
+    session.cd(`/home/${username}`);
 
-    const userAndCommand = document.createElement("div");
-    userAndCommand.classList.add("user-and-command");
-    userAndCommand.appendChild(userPrefixClone);
-    userAndCommand.appendChild(command);
+    const ui = new Ui({
+        updatePrompt: (update) => update(session.cwdString()),
+        keyListener: (event) => ui.executeActions(uiKeyEvent(session, event)),
+    })
 
-    const outputElement = document.createElement("div");
-    outputElement.innerHTML = output;
+    const catOutput = (() => {
+        const res = runCommand("cat welcome.txt", {}, session);
+        if (!res.ok) throw new Error("unreachable: valid cat command");
+        if (res.value.tag !== "cmd") throw new Error("unreachable: valid cat command");
+        return res.value.content;
+    })();
 
-    const historyItem = document.createElement("div");
-    historyItem.classList.add("history-list");
-
-    historyItem.appendChild(userAndCommand);
-    historyItem.appendChild(outputElement);
-
-    history.appendChild(historyItem);
-
-    scrollTo(0, document.body.scrollHeight);
-
-    commandHistory.push(input.value);
-}
-
-function clearHistory() {
-    history.replaceChildren();
-}
-
-function setInputMaxLength() {
-    const width = input.clientWidth;
-    const charWidth = 10;
-    input.maxLength = Math.floor(width / charWidth) - 1;
-}
-
-function updatePromptAndInput() {
-    // a lot of this is hardcoded. Figure out a way to fix this
-    const marginPx = 8;
-    const offsetPx = 2;
-
-    const dir = session.cwdString();
-
-    const prompt = username + "@mtkonge:" + dir + "$ ";
-    const prefixChars = prompt.length;
-
-    dirElement.innerText = dir;
-
-    const charWidthPx = 10;
-
-    const cursorPosition = input.selectionStart!;
-    const cursorLeft = (prefixChars + cursorPosition) * charWidthPx + marginPx +
-        offsetPx;
-
-    cursor.style.left = cursorLeft + "px";
-}
-
-function showCursor() {
-    cursor.style.display = "inline-block";
-}
-
-function hideCursor() {
-    cursor.style.display = "none";
-}
-
-function main() {
-    hideCursor();
-    updatePromptAndInput();
-    setInputMaxLength();
+    ui.executeActions([{tag: "add_history_item", output: catOutput}]);
 }
 
 main();
