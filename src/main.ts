@@ -4,7 +4,6 @@ import { root } from "./initial_fs.ts";
 import { CommandLexer } from "./lexer.ts";
 import { CommandParser, Redirect } from "./parser.ts";
 import { Err, Ok, Result } from "./results.ts";
-import "./style.css";
 import { UiAction } from "./ui.ts";
 import { KeyEvent, Ui } from "./ui.ts";
 
@@ -49,7 +48,11 @@ function autoCompleteMatches(
     return [matches[0].substring(0, closestLength)];
 }
 
-function requestAutoComplete(session: Session, cmd: string, last: string | undefined): string[] {
+function requestAutoComplete(
+    session: Session,
+    cmd: string,
+    last: string | undefined,
+): string[] {
     if (last === undefined) {
         if (rawCmdIsCmd(cmd)) {
             return [];
@@ -63,6 +66,7 @@ function requestAutoComplete(session: Session, cmd: string, last: string | undef
         case "mkdir":
         case "ls":
         case "touch":
+        case "rm":
         case "cat": {
             const fileSeperator = last.lastIndexOf("/");
             const path = fileSeperator !== -1
@@ -90,61 +94,10 @@ function requestAutoComplete(session: Session, cmd: string, last: string | undef
 }
 
 function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
-    const actions: UiAction[] = []; 
-    if (event.key === "Enter") {
-        let shouldClear = false;
-
-        const res = runCommand(event.input, {
-            clear() {
-                shouldClear = true;
-            },
-        }, session);
-
-        if (!res.ok) {
-            actions.push({tag: "add_history_item", output: res.error});
-            actions.push({tag: "clear_input"});
-            commandHistory.push(event.input);
-            return actions;
-        }
-
-        if (res.value.tag === "empty_cmd") {
-            actions.push({tag: "add_history_item", output: ""});
-            return actions;
-        }
-
-        commandHistory.push(event.input);
-        
-        const output = res.value;
-        if (output.redirects.length === 0) {
-            actions.push({tag: "add_history_item", "output": res.value.content});
-        } else {
-            for (const redirect of output.redirects) {
-                const res = session.createOrOpenFile(redirect.target);
-                if (!res.ok) {
-                    actions.push({tag: "add_history_item", output: `bash: ${res.error}`});
-                    actions.push({tag: "clear_input"});
-                    return actions;
-                }
-                const file = res.value;
-                if (redirect.tag === "write") {
-                    file.content = output.content;
-                } else if (redirect.tag === "append") {
-                    file.content += output.content;
-                }
-            }
-            actions.push({tag: "add_history_item", output: ""});
-        }
-
-        if (shouldClear) {
-            actions.push({tag: "clear_history"})
-        }
-
-        actions.push({tag: "clear_input"})
-        return actions;
-    }
-     if (event.ctrl && event.key === "c") {
-        actions.push({tag: "add_history_item", output: ""});
-        actions.push({tag: "clear_input"})
+    const actions: UiAction[] = [];
+    if (event.ctrl && event.key === "c") {
+        actions.push({ tag: "add_history_item", output: "" });
+        actions.push({ tag: "clear_input" });
         return actions;
     }
     if (event.key === "Tab") {
@@ -155,14 +108,17 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
             const option = options[0];
             const idx = event.input.lastIndexOf(last ?? cmd);
             const selected = event.input.substring(0, idx) + option;
-            actions.push({tag: "set_input_value", value: selected})
+            actions.push({ tag: "set_input_value", value: selected });
         } else if (options.length > 1) {
-            actions.push({tag: "add_history_item", output: options.join("\n")});
+            actions.push({
+                tag: "add_history_item",
+                output: options.join("\n"),
+            });
         }
         event.preventDefault();
         return actions;
-    } 
-     if (event.key === "ArrowUp") {
+    }
+    if (event.key === "ArrowUp") {
         if (commandHistoryIndex >= commandHistory.length) {
             return actions;
         }
@@ -171,12 +127,12 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         }
         commandHistoryIndex++;
         const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
-        actions.push({tag: "set_input_value", value: cmd});
+        actions.push({ tag: "set_input_value", value: cmd });
         event.preventDefault();
         return actions;
     } else if (event.key === "ArrowDown") {
         if (commandHistoryIndex === 1) {
-            actions.push({tag: "set_input_value", value: lastKnownCommand}); // TODO: change to currently editing text
+            actions.push({ tag: "set_input_value", value: lastKnownCommand });
             commandHistoryIndex--;
             return actions;
         }
@@ -185,22 +141,77 @@ function uiKeyEvent(session: Session, event: KeyEvent): UiAction[] {
         }
         commandHistoryIndex--;
         const cmd = commandHistory[commandHistory.length - commandHistoryIndex];
-        actions.push({tag: "set_input_value", value: cmd});
+        actions.push({ tag: "set_input_value", value: cmd });
         event.preventDefault();
+        return actions;
+    }
+    if (event.key === "Enter") {
+        let shouldClear = false;
+
+        const res = runCommand(event.input, {
+            clear() {
+                shouldClear = true;
+            },
+        }, session);
+
+        if (!res.ok) {
+            actions.push({ tag: "add_history_item", output: res.error });
+            actions.push({ tag: "clear_input" });
+            commandHistory.push(event.input);
+            return actions;
+        }
+
+        if (res.value.tag === "empty_cmd") {
+            actions.push({ tag: "add_history_item", output: "" });
+            return actions;
+        }
+
+        commandHistory.push(event.input);
+
+        const output = res.value;
+        if (output.redirects.length === 0) {
+            actions.push({
+                tag: "add_history_item",
+                "output": res.value.content,
+            });
+        } else {
+            for (const redirect of output.redirects) {
+                const res = session.createOrOpenFile(redirect.target);
+                if (!res.ok) {
+                    actions.push({
+                        tag: "add_history_item",
+                        output: `bash: ${res.error}`,
+                    });
+                    actions.push({ tag: "clear_input" });
+                    return actions;
+                }
+                const file = res.value;
+                if (redirect.tag === "write") {
+                    file.content = output.content;
+                } else if (redirect.tag === "append") {
+                    file.content += output.content;
+                }
+            }
+            actions.push({ tag: "add_history_item", output: "" });
+        }
+
+        if (shouldClear) {
+            actions.push({ tag: "clear_history" });
+        }
+
+        actions.push({ tag: "clear_input" });
         return actions;
     }
     return [];
 }
 
-
-
 type MetaCmds = {
     clear?(): void;
 };
 
-type Output = 
-| { tag: "cmd", redirects: Redirect[], content: string, }
-| { tag: "empty_cmd", };
+type Output =
+    | { tag: "cmd"; redirects: Redirect[]; content: string }
+    | { tag: "empty_cmd" };
 
 function runCommand(
     command: string,
@@ -208,21 +219,7 @@ function runCommand(
     session: Session,
 ): Result<Output, string> {
     const lexer = new CommandLexer(command);
-    const tokens = [];
-    while (!lexer.done()) {
-        const res = lexer.next();
-        if (!res.ok) {
-            return Err(`error lexing cmd: ${res.error}`);
-        } else {
-            if (!res.value) {
-                throw new Error(
-                    "unreachable: should only return null tokens if lexer is done",
-                );
-            }
-            tokens.push(res.value);
-        }
-    }
-    const parseRes = new CommandParser(tokens).parse();
+    const parseRes = new CommandParser(lexer).parse();
     if (!parseRes.ok) {
         return parseRes;
     }
@@ -231,7 +228,7 @@ function runCommand(
     const redirects = cmd.redirects;
 
     if (cmd.bin === "") {
-        return Ok({tag: "empty_cmd"})
+        return Ok({ tag: "empty_cmd" });
     }
 
     if (!rawCmdIsCmd(cmd.bin)) {
@@ -248,6 +245,24 @@ function runCommand(
             const res = session.cd(cmd.arguments.pop() ?? "");
             if (!res.ok) {
                 return Err(`cd: ${res.error}`);
+            }
+
+            return Ok({ tag: "cmd", redirects, content: "" });
+        }
+        case "rm": {
+            if (cmd.arguments.length === 0) {
+                return Err("rm: missing operand");
+            }
+
+            const recursive = cmd.long_options.includes("recursive") ||
+                cmd.short_options.includes("r") ||
+                cmd.short_options.includes("R");
+
+            for (const dir of cmd.arguments) {
+                const res = session.rm(dir, recursive);
+                if (!res.ok) {
+                    return Err(`rm: ${res.error}`);
+                }
             }
 
             return Ok({ tag: "cmd", redirects, content: "" });
@@ -285,10 +300,7 @@ function runCommand(
                             .join("\n")
                         : v.error
                 ).join("\n");
-            return Ok({ tag: "cmd",
-                redirects,
-                content,
-            });
+            return Ok({ tag: "cmd", redirects, content });
         }
         case "touch": {
             if (cmd.arguments.length === 0) {
@@ -307,16 +319,17 @@ function runCommand(
                 .map((v) => session.cat(v))
                 .map((r) => r.ok ? r.value : `cat: ${r.error}`)
                 .reduce((acc, v) => acc + "\n" + v);
-            return Ok({ tag: "cmd",
-                content,
-                redirects,
-            });
+            return Ok({ tag: "cmd", content, redirects });
         }
         case "echo": {
             if (cmd.arguments.length === 0) {
                 return Ok({ tag: "cmd", redirects, content: "\n" });
             }
-            return Ok({ tag: "cmd", redirects, content: cmd.arguments.join(" ") + "\n" });
+            return Ok({
+                tag: "cmd",
+                redirects,
+                content: cmd.arguments.join(" ") + "\n",
+            });
         }
         case "clear": {
             metaCmds.clear?.();
@@ -325,7 +338,6 @@ function runCommand(
     }
 }
 
-
 async function main() {
     const session = new Session(await root(username), username);
     session.cd(`/home/${username}`);
@@ -333,16 +345,18 @@ async function main() {
     const ui = new Ui({
         updatePrompt: (update) => update(session.cwdString()),
         keyListener: (event) => ui.executeActions(uiKeyEvent(session, event)),
-    })
+    });
 
     const catOutput = (() => {
         const res = runCommand("cat welcome.txt", {}, session);
         if (!res.ok) throw new Error("unreachable: valid cat command");
-        if (res.value.tag !== "cmd") throw new Error("unreachable: valid cat command");
+        if (res.value.tag !== "cmd") {
+            throw new Error("unreachable: valid cat command");
+        }
         return res.value.content;
     })();
 
-    ui.executeActions([{tag: "add_history_item", output: catOutput}]);
+    ui.executeActions([{ tag: "add_history_item", output: catOutput }]);
 }
 
 main();

@@ -4,7 +4,6 @@ export type UiAction =
     | { tag: "clear_history" }
     | { tag: "clear_input" };
 
-
 export type KeyEvent = {
     key: string;
     input: string;
@@ -40,9 +39,9 @@ export class Ui {
                     ctrl: event.ctrlKey,
                     input: this.input.value,
                     preventDefault: () => event.preventDefault(),
-                })
-                updatePrompt((cwd) => this.updatePromptAndInput(cwd))
-            }
+                });
+                updatePrompt((cwd) => this.updatePromptAndInput(cwd));
+            },
         );
 
         addEventListener("click", () => this.input.focus());
@@ -80,29 +79,58 @@ export class Ui {
         this.history.replaceChildren();
     }
 
-    private executeAction(action: UiAction): void {
+    private executeAction(action: UiAction): null {
         switch (action.tag) {
             case "add_history_item":
                 this.addHistoryItem(action.output);
-                break;
+                return null;
             case "clear_history": {
                 this.clearHistory();
-                break;
+                return null;
             }
             case "set_input_value":
                 this.input.value = action.value;
-                break;
+                return null;
             case "clear_input":
                 this.input.value = "";
-                break;
-            default:
-                throw new Error("unreachable: should handle all actions")
+                return null;
         }
     }
 
     private updatePromptAndInput(cwd: string) {
-        const label = document.querySelector("#terminal-input-label")!;
-        label.textContent = this.input.value;
+        const termContent = document.querySelector("#terminal-input-content");
+        if (!termContent) throw new Error("unreachable: defined in index.html");
+        termContent.textContent = this.input.value;
+        const cursorPadding = document.querySelector(
+            "#terminal-input-cursor-padding",
+        );
+        if (!cursorPadding) {
+            throw new Error("unreachable: defined in index.html");
+        }
+        const contentUntilSelection = this.input.value.substring(
+            0,
+            this.input.selectionStart ?? this.input.value.length,
+        );
+        cursorPadding.textContent = contentUntilSelection;
+        const cursorSelection = document.querySelector(
+            "#terminal-input-cursor-selection",
+        );
+        if (!cursorSelection) {
+            throw new Error("unreachable: defined in index.html");
+        }
+        const cursorWidth = (this.input.selectionEnd ?? 0) -
+            (this.input.selectionStart ?? 0);
+        if (cursorWidth > 0) {
+            cursorSelection.classList.add("block");
+            const selectedInput = this.input.value.substring(
+                this.input.selectionStart ?? 0,
+                this.input.selectionEnd ?? this.input.value.length,
+            );
+            cursorSelection.textContent = selectedInput;
+        } else {
+            cursorSelection.classList.remove("block");
+            cursorSelection.textContent = "_";
+        }
         const userCwd = document.querySelector<HTMLDivElement>("#dir")!;
         userCwd.innerText = cwd;
     }

@@ -1,0 +1,108 @@
+* {
+    margin: 0;
+    font-size: 20px;
+    font-family: "Ubuntu Mono", monospace;
+    -ms-overflow-style: none; /* IE and Edge */
+    scrollbar-width: none; /* Firefox */
+}
+
+*::-webkit-scrollbar {
+    display: none;
+}
+
+span, .history-list {
+    white-space: pre; /*enable whitespace*/
+}
+
+body {
+    background-color: #222228;
+    color: #f5f5f5;
+}
+
+#input-wrapper {
+    display: flex;
+    font-size: 0;
+    margin-left: 8px;
+}
+
+.user-and-command {
+    display: flex;
+}
+
+#history {
+    display: flex;
+    flex-direction: column;
+    margin-left: 8px;
+}
+
+.history-item {
+    display: flex;
+}
+
+.user-prefix {
+    display: flex;
+}
+
+#input-wrapper #terminal-input {
+    all: unset;
+    opacity: 0;
+}
+
+#input-wrapper #terminal-input-label {
+    position: relative;
+    text-decoration: none;
+    border: none;
+    background-color: transparent;
+    outline: none;
+    color: #f5f5f5;
+    caret-color: transparent;
+    width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    padding: 0;
+}
+
+#input-wrapper #terminal-input-cursor {
+    left: 0;
+    position: absolute;
+}
+
+#input-wrapper #terminal-input-cursor-padding {
+    opacity: 0;
+}
+
+#input-wrapper #terminal-input-cursor-selection {
+    font-weight: bold;
+    animation: blink 1s step-start infinite;
+}
+
+#input-wrapper #terminal-input-cursor-selection.block {
+    font-weight: normal;
+    background-color: #f5f5f5;
+    color: #222228;
+}
+
+#input-wrapper input:not(:focus) + label #terminal-input-cursor {
+    display: none;
+}
+
+.user {
+    color: #00ff00;
+}
+
+#dir {
+    color: #4488ff;
+}
+
+@keyframes blink {
+    0% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0;
+    }
+    100% {
+        opacity: 1;
+    }
+}
