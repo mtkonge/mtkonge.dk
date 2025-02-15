@@ -12,7 +12,6 @@ export type KeyEvent = {
     preventDefault: () => void;
 };
 
-export type UpdatePromptFunctor = (functor: (cwd: string) => void) => void;
 export type KeyEventFunctor = (event: KeyEvent) => void;
 
 export type UiConfig = {
