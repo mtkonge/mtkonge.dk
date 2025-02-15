@@ -1,6 +1,7 @@
 export type UiAction =
     | { tag: "add_history_item"; output: string }
     | { tag: "set_input_value"; value: string }
+    | { tag: "set_cwd"; cwd: string }
     | { tag: "clear_history" }
     | { tag: "clear_input" };
 
@@ -15,7 +16,6 @@ export type UpdatePromptFunctor = (functor: (cwd: string) => void) => void;
 export type KeyEventFunctor = (event: KeyEvent) => void;
 
 export type UiConfig = {
-    updatePrompt: UpdatePromptFunctor;
     keyListener: KeyEventFunctor;
 };
 
@@ -26,10 +26,10 @@ export class Ui {
     )!;
     private userPrefix = document.querySelector<HTMLDivElement>("#user")!;
 
-    constructor({ updatePrompt, keyListener }: UiConfig) {
+    constructor({ keyListener }: UiConfig) {
         this.input.addEventListener(
             "keyup",
-            () => updatePrompt((cwd) => this.updatePromptAndInput(cwd)),
+            () => this.updateInputAndCursor(),
         );
         this.input.addEventListener(
             "keydown",
@@ -40,7 +40,7 @@ export class Ui {
                     input: this.input.value,
                     preventDefault: () => event.preventDefault(),
                 });
-                updatePrompt((cwd) => this.updatePromptAndInput(cwd));
+                this.updateInputAndCursor();
             },
         );
 
@@ -86,12 +86,14 @@ export class Ui {
             case "add_history_item":
                 this.addHistoryItem(action.output);
                 return null;
-            case "clear_history": {
+            case "clear_history":
                 this.clearHistory();
                 return null;
-            }
             case "set_input_value":
                 this.input.value = action.value;
+                return null;
+            case "set_cwd":
+                this.updateCwd(action.cwd);
                 return null;
             case "clear_input":
                 this.input.value = "";
@@ -99,7 +101,7 @@ export class Ui {
         }
     }
 
-    private updatePromptAndInput(cwd: string) {
+    private updateInputAndCursor() {
         const termContent = document.querySelector("#terminal-input-content");
         if (!termContent) throw new Error("unreachable: defined in index.html");
         termContent.textContent = this.input.value;
@@ -133,6 +135,9 @@ export class Ui {
             cursorSelection.classList.remove("block");
             cursorSelection.textContent = "_";
         }
+    }
+
+    private updateCwd(cwd: string) {
         const userCwd = document.querySelector<HTMLDivElement>("#dir")!;
         userCwd.textContent = cwd;
     }
@@ -145,5 +150,6 @@ export class Ui {
             }
             this.executeAction(action);
         }
+        this.updateInputAndCursor();
     }
 }
