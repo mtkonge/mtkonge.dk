@@ -1,37 +1,29 @@
-import {
-    Dir,
-    dirChildren,
-    fetchFile,
-    fileChildren,
-    linkDirTreeOrphans,
-} from "./file_system.ts";
+import { fetchFile, initialChildren, InitialRootDir } from "./file_system.ts";
 
-export async function root(username: string): Promise<Dir> {
+export async function root(username: string): Promise<InitialRootDir> {
     const motd = "motd.txt";
-    const root: Dir = {
-        tag: "dir",
-        name: "/",
-        parent: null,
-        children: dirChildren({
+    const root: InitialRootDir = {
+        tag: "root_dir",
+        children: initialChildren({
             "home": {
                 tag: "dir",
                 name: "home",
-                parent: null,
-                children: dirChildren({
+                children: initialChildren({
                     [username]: {
                         tag: "dir",
                         name: username,
-                        parent: null,
-                        children: fileChildren({
-                            [motd]: await fetchFile(motd),
+                        children: initialChildren({
+                            [motd]: {
+                                tag: "file",
+                                name: motd,
+                                content: await fetchFile(motd),
+                            },
                         }),
                     },
                 }),
             },
         }),
     };
-
-    linkDirTreeOrphans(root, null);
 
     return root;
 }

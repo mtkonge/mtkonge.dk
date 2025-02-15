@@ -187,7 +187,7 @@ async function uiKeyEvent(
         if (output.redirects.length === 0) {
             actions.push({
                 tag: "add_history_item",
-                "output": res.value.content,
+                output: res.value.content,
             });
         } else {
             for (const redirect of output.redirects) {
@@ -223,6 +223,7 @@ async function uiKeyEvent(
             actions.push({ tag: "clear_history" });
         }
 
+        actions.push({ tag: "set_cwd", cwd: session.formattedCwd() });
         actions.push({ tag: "clear_input" });
         return actions;
     }
@@ -442,7 +443,6 @@ async function main() {
     session.cd(`/home/${username}`);
 
     const ui = new Ui({
-        updatePrompt: (update) => update(session.cwdString()),
         keyListener: async (event) =>
             ui.executeActions(await uiKeyEvent(session, event)),
     });
