@@ -45,14 +45,19 @@ export class CommandParser {
             short_options: [],
             arguments: [],
         };
-        const binRes = this.eatArgument();
+        const binRes = this.lexer.next();
         if (!binRes.ok) {
             return binRes;
         }
-        if (binRes.value === null) {
+        const binToken = binRes.value;
+        if (binToken === null) {
             return Ok(cmd);
+        } else if (binToken.value.tag !== "argument") {
+            return Err(
+                `expected argument at ${binToken.index}, got '${binToken.value.tag}'`,
+            );
         }
-        cmd.bin = binRes.value.argument;
+        cmd.bin = binToken.value.argument;
         while (true) {
             const tokenRes = this.lexer.next();
             if (!tokenRes.ok) {
