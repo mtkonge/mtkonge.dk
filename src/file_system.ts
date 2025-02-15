@@ -8,6 +8,7 @@ export type FileContent =
 export type File = {
     tag: "file";
     name: string;
+    parent: Dir | RootDir;
     content: FileContent;
 };
 
@@ -23,20 +24,22 @@ export type RootDir = {
     children: Map<string, Dir | File>;
 };
 
+export type InitialFile = Omit<File, "parent">;
+
 export type InitialDir = {
     tag: "dir";
     name: string;
-    children: Map<string, InitialDir | File>;
+    children: Map<string, InitialDir | InitialFile>;
 };
 
 export type InitialRootDir = {
     tag: "root_dir";
-    children: Map<string, InitialDir | File>;
+    children: Map<string, InitialDir | InitialFile>;
 };
 
 export function initialChildren(
-    children: { [key: string]: InitialDir | File },
-): Map<string, InitialDir | File> {
+    children: { [key: string]: InitialDir | InitialFile },
+): Map<string, InitialDir | InitialFile> {
     const map = new Map();
 
     for (const key in children) {
@@ -84,7 +87,9 @@ function linkRootDir(root: InitialRootDir): RootDir {
     const children = new Map<string, Dir | File>(
         root.children.entries().map(([name, child]) => [
             name,
-            child.tag === "dir" ? linkDir(child, node) : child,
+            child.tag === "dir"
+                ? linkDir(child, node)
+                : { parent: node, ...child },
         ]),
     );
     node.children = children;
@@ -103,7 +108,9 @@ function linkDir(
     const children = new Map<string, Dir | File>(
         initial.children.entries().map(([name, child]) => [
             name,
-            child.tag === "dir" ? linkDir(child, node) : child,
+            child.tag === "dir"
+                ? linkDir(child, node)
+                : { parent: node, ...child },
         ]),
     );
     node.children = children;
@@ -186,30 +193,26 @@ export class Session {
     }
 
     public rm(path: string, recursive: boolean): Result<undefined, string> {
-        const res = this.filenameAndParentFromPath(path);
+        const res = this.nodeFromPath(path);
         if (!res.ok) {
             return res;
         }
-        if (res.value.tag === "root") {
+        if (res.value.tag === "root_dir") {
             if (!recursive) {
                 return Err(formatIoError(path, "is_a_directory"));
             }
             return Err(formatIoError(path, "hal_9000"));
         }
-        const { filename, parent } = res.value;
-        const file = parent.children.get(filename);
-        if (file === undefined) {
-            return Err(formatIoError(path, "no_such_file_or_directory"));
-        }
-        if (file.tag === "dir" && !recursive) {
+        if (res.value.tag === "dir" && !recursive) {
             return Err(formatIoError(path, "is_a_directory"));
         }
-        const isImportantDirectory = file === this.root.children.get("home") ||
-            file === this.userDir();
+        const isImportantDirectory =
+            res.value === this.root.children.get("home") ||
+            res.value === this.userDir();
         if (isImportantDirectory) {
             return Err(formatIoError(path, "hal_9000"));
         }
-        parent.children.delete(filename);
+        res.value.parent.children.delete(res.value.name);
         return Ok(undefined);
     }
 
@@ -220,6 +223,7 @@ export class Session {
     ): File {
         const file: File = {
             tag: "file",
+            parent,
             name,
             content: {
                 tag: "dynamic",
@@ -511,8 +515,4 @@ export class Session {
         }
         return userDir;
     }
-}
-
-function lexPath(text: string): string[] {
-    return text.split("/").filter((v) => v !== "");
 }
