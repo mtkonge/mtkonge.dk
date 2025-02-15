@@ -1,5 +1,6 @@
 import { serveDir } from "jsr:@std/http/file-server";
 import { bundle } from "./bundle.ts";
+import { serveWgetRequest, serveXdgOpenRequest } from "./backend.ts";
 
 function listening(addr: Addr) {
     console.log(`Listening on http://${addr.hostname}:${addr.port}/`);
@@ -47,6 +48,13 @@ function serveDist(addr: Addr) {
         hostname: addr.hostname,
         onListen: (_) => listening(addr),
     }, (req: Request) => {
+        const url = new URL(req.url);
+        if (url.pathname.startsWith("/bin/xdg-open")) {
+            return serveXdgOpenRequest(req);
+        }
+        if (url.pathname.startsWith("/bin/wget")) {
+            return serveWgetRequest(req);
+        }
         return serveDir(req, {
             fsRoot: "dist",
             urlRoot: "",
