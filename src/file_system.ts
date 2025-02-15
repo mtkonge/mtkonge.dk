@@ -14,13 +14,29 @@ export type File = {
 export type Dir = {
     tag: "dir";
     name: string;
-    parent: Dir | null;
+    children: Map<string, Dir | File>;
+    parent: Dir | RootDir;
+};
+
+export type RootDir = {
+    tag: "root_dir";
     children: Map<string, Dir | File>;
 };
 
-export function dirChildren(
-    children: { [key: string]: Dir },
-): Map<string, Dir> {
+export type InitialDir = {
+    tag: "dir";
+    name: string;
+    children: Map<string, InitialDir | File>;
+};
+
+export type InitialRootDir = {
+    tag: "root_dir";
+    children: Map<string, InitialDir | File>;
+};
+
+export function initialChildren(
+    children: { [key: string]: InitialDir | File },
+): Map<string, InitialDir | File> {
     const map = new Map();
 
     for (const key in children) {
@@ -46,49 +62,89 @@ export async function fetchFile(
     };
 }
 
-export function fileChildren(
-    children: { [filename: string]: FileContent },
-): Map<string, File> {
-    const map = new Map<string, File>();
-
-    for (const name in children) {
-        map.set(name, {
-            tag: "file",
-            name,
-            content: children[name],
-        });
-    }
-
-    return map;
-}
-
-export function linkDirTreeOrphans(node: Dir, parent: Dir | null) {
-    node.parent = parent;
-    const dirChildren = node.children.values().filter((v) => v.tag === "dir");
-    for (const child of dirChildren) {
-        linkDirTreeOrphans(child, node);
-    }
-}
-
-function fullDirPathString(node: Dir): string {
-    if (!node.parent) {
-        return "";
-    }
-    return `${fullDirPathString(node.parent)}/${node.name}`;
-}
-
 type ParentFromPath =
-    | { tag: "root"; root: Dir }
-    | { tag: "file"; filename: string; parent: Dir };
+    | { tag: "root"; root: RootDir }
+    | { tag: "file"; filename: string; parent: Dir["parent"] };
+
+function absolutePathOfDir(
+    dir: Dir | RootDir,
+    descendants: Dir[] = [],
+): string {
+    if (dir.tag === "root_dir") {
+        return "/" + descendants.map((v) => v.name).join("/");
+    }
+    return absolutePathOfDir(dir.parent, [dir, ...descendants]);
+}
+
+function linkRootDir(root: InitialRootDir): RootDir {
+    const node: RootDir = {
+        tag: "root_dir",
+        children: new Map(),
+    };
+    const children = new Map<string, Dir | File>(
+        root.children.entries().map(([name, child]) => [
+            name,
+            child.tag === "dir" ? linkDir(child, node) : child,
+        ]),
+    );
+    node.children = children;
+    return node;
+}
+function linkDir(
+    initial: InitialDir,
+    parent: Dir["parent"],
+): Dir {
+    const node: Dir = {
+        tag: "dir",
+        name: initial.name,
+        parent,
+        children: new Map(),
+    };
+    const children = new Map<string, Dir | File>(
+        initial.children.entries().map(([name, child]) => [
+            name,
+            child.tag === "dir" ? linkDir(child, node) : child,
+        ]),
+    );
+    node.children = children;
+    return node;
+}
+
+type IoError =
+    | "no_such_file_or_directory"
+    | "not_a_directory"
+    | "is_a_directory"
+    | "file_exists"
+    | "hal_9000";
+function formatIoError(
+    path: string,
+    error: IoError,
+): `${string}: ${string}` {
+    switch (error) {
+        case "no_such_file_or_directory":
+            return `'${path}': No such file or directory`;
+        case "not_a_directory":
+            return `'${path}': Not directory`;
+        case "is_a_directory":
+            return `'${path}': Is a directory`;
+        case "file_exists":
+            return `'${path}': File exists`;
+        case "hal_9000":
+            // (2001: A Space Odyssey)
+            return `'${path}': I'm sorry, Dave. I'm afraid I can't do that.`;
+    }
+}
 
 export class Session {
-    private cwdDir: Dir;
+    private cwdDir: Dir | RootDir;
+    private root: RootDir;
 
     constructor(
-        private root: Dir,
+        root: InitialRootDir,
         private username: string,
     ) {
-        this.cwdDir = root;
+        this.root = linkRootDir(root);
+        this.cwdDir = this.root;
     }
 
     public cd(path?: string): Result<undefined, string> {
@@ -96,27 +152,14 @@ export class Session {
             this.cwdDir = this.userDir();
             return Ok(undefined);
         }
-
-        if (path === "") {
-            return Ok(undefined);
-        }
-
-        if (path === "/") {
-            this.cwdDir = this.root;
-            return Ok(undefined);
-        }
-
-        const res = this.getChildFromPath(path);
+        const res = this.nodeFromPath(path);
         if (!res.ok) {
-            return Err(`${path}: No such file or directory`);
+            return Err(formatIoError(path, "no_such_file_or_directory"));
         }
-
         if (res.value.tag === "file") {
-            return Err(`${path}: Not a directory`);
+            return Err(formatIoError(path, "not_a_directory"));
         }
-
         this.cwdDir = res.value;
-
         return Ok(undefined);
     }
 
@@ -124,66 +167,72 @@ export class Session {
         path: string,
         data: Uint8Array = new Uint8Array(),
     ): Result<File, string> {
-        const res = this.getParentFromPath(path);
+        const res = this.filenameAndParentFromPath(path);
         if (!res.ok) {
             return res;
         }
         if (res.value.tag === "root") {
-            return Err(`${path}: File exists`);
+            return Err(formatIoError(path, "file_exists"));
         }
-        const { filename: name, parent } = res.value;
-        const file = parent.children.get(name);
+        const { filename, parent } = res.value;
+        const file = parent.children.get(filename);
         if (!file) {
-            const child: File = {
-                tag: "file",
-                name,
-                content: {
-                    tag: "dynamic",
-                    data,
-                },
-            };
-            parent.children.set(name, child);
-            return Ok(child);
+            return Ok(this.createFile(filename, data, parent));
         }
         if (file.tag === "dir") {
-            return Err(`${path}: Is a directory`);
+            return Err(formatIoError(path, "is_a_directory"));
         }
         return Ok(file);
     }
 
     public rm(path: string, recursive: boolean): Result<undefined, string> {
-        const res = this.getParentFromPath(path);
+        const res = this.filenameAndParentFromPath(path);
         if (!res.ok) {
             return res;
         }
         if (res.value.tag === "root") {
             if (!recursive) {
-                return Err(`${path}: Is a directory`);
+                return Err(formatIoError(path, "is_a_directory"));
             }
-            // (2001: A Space Odyssey)
-            return Err(`${path}: I'm sorry, Dave. I'm afraid I can't do that.`);
+            return Err(formatIoError(path, "hal_9000"));
         }
         const { filename, parent } = res.value;
         const file = parent.children.get(filename);
-        if (!file) {
-            return Err(`${path}: No such file or directory`);
+        if (file === undefined) {
+            return Err(formatIoError(path, "no_such_file_or_directory"));
         }
         if (file.tag === "dir" && !recursive) {
-            return Err(`${path}: Is a directory`);
+            return Err(formatIoError(path, "is_a_directory"));
         }
         const isImportantDirectory = file === this.root.children.get("home") ||
             file === this.userDir();
         if (isImportantDirectory) {
-            // (2001: A Space Odyssey)
-            return Err(
-                `${path}: I'm sorry, Dave. I'm afraid I can't do that.`,
-            );
+            return Err(formatIoError(path, "hal_9000"));
         }
         parent.children.delete(filename);
         return Ok(undefined);
     }
 
-    private createDir(name: string, parent: Dir): Dir {
+    private createFile(
+        name: string,
+        data: Uint8Array,
+        parent: RootDir | Dir,
+    ): File {
+        const file: File = {
+            tag: "file",
+            name,
+            content: {
+                tag: "dynamic",
+                data,
+            },
+        };
+
+        parent.children.set(name, file);
+
+        return file;
+    }
+
+    private createDir(name: string, parent: RootDir | Dir): Dir {
         const dir: Dir = {
             tag: "dir",
             parent,
@@ -196,88 +245,89 @@ export class Session {
         return dir;
     }
 
-    private nodeRootFromPath(path: string): Dir {
-        if (path.startsWith("/")) {
-            return this.root;
-        }
-        if (path.startsWith("~")) {
-            this.userDir();
-        }
-        return this.cwdDir;
-    }
-
     public mkdir(
         path: string,
         makeParents: boolean,
     ): Result<undefined, string> {
-        const segments = lexPath(path);
-        const filename = segments.pop();
-        if (!filename) {
-            if (path === "/") {
-                return Err(`${path}: File exists`);
-            }
-            throw new Error("unreachable: path cannot be empty");
-        }
-
-        let node = this.nodeRootFromPath(path);
-        for (const segment of segments) {
-            const res = this.getNodeFromPathSegment(node, segment);
-            if (!res.ok && makeParents) {
-                const child = this.createDir(segment, node);
-                node = child;
-                continue;
-            } else if (!res.ok) {
-                return Err(`${path}: No such file or directory`);
-            }
-            if (res.value.tag === "file") {
-                return Err(`${path}: Not a directory`);
-            }
-            node = res.value;
-        }
-
-        const existing = node.children.get(filename);
-        if (existing && makeParents) {
-            if (existing.tag === "dir") {
+        const pathSegments = this.pathToAbsolutePathSegments(path);
+        const filename = pathSegments.pop();
+        if (filename === undefined) {
+            if (makeParents) {
                 return Ok(undefined);
             }
-            return Err(`${path}: Not a directory`);
-        } else if (existing) {
-            return Err(`${path}: File exists`);
+            return Err(formatIoError(path, "file_exists"));
+        }
+        let parent: RootDir | Dir = this.root;
+        while (true) {
+            const segment = pathSegments.shift();
+            if (segment === undefined) {
+                break;
+            }
+            const child: File | Dir | undefined = parent.children.get(
+                segment,
+            );
+            if (child === undefined) {
+                if (!makeParents) {
+                    const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                    return Err(
+                        formatIoError(childPath, "no_such_file_or_directory"),
+                    );
+                }
+                const newChild = this.createDir(segment, parent);
+                parent = newChild;
+                continue;
+            }
+            if (child.tag === "file") {
+                const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                return Err(formatIoError(childPath, "file_exists"));
+            }
+            parent = child;
         }
 
-        this.createDir(filename, node);
-
+        const existingChild = parent.children.get(filename);
+        if (existingChild !== undefined) {
+            if (!makeParents || existingChild.tag === "file") {
+                return Err(formatIoError(path, "file_exists"));
+            }
+            return Ok(undefined);
+        }
+        this.createDir(filename, parent);
         return Ok(undefined);
     }
+
+    public dirOrFileExists(path: string): boolean {
+        const res = this.nodeFromPath(path);
+        return res.ok;
+    }
+
     public touch(path: string): Result<undefined, string> {
-        const res = this.getParentFromPath(path);
+        const res = this.filenameAndParentFromPath(path);
         if (!res.ok) {
-            return Err(`'${path}': No such file or directory`);
+            return res;
         }
         if (res.value.tag === "root") {
             return Ok(undefined);
         }
 
-        const { filename: name, parent } = res.value;
-        if (!parent.children.has(name)) {
-            parent.children.set(name, {
-                tag: "file",
-                name,
-                content: { tag: "dynamic", data: new Uint8Array() },
-            });
+        const { filename, parent } = res.value;
+
+        const file = parent.children.get(filename);
+        if (file !== undefined) {
+            Ok(undefined);
         }
+        this.createFile(filename, new Uint8Array(), parent);
         return Ok(undefined);
     }
 
     public cat(path: string): Result<string, string> {
-        const res = this.getChildFromPath(path);
+        const res = this.nodeFromPath(path);
         if (!res.ok) {
-            return Err(`'${path}': No such file or directory`);
+            return Err(formatIoError(path, "no_such_file_or_directory"));
         }
 
         const file = res.value;
-        if (file.tag === "dir") {
-            return Err(`'${path}': Is a directory`);
+        if (file.tag === "dir" || file.tag === "root_dir") {
+            return Err(formatIoError(path, "is_a_directory"));
         }
 
         const decoded = new TextDecoder().decode(file.content.data);
@@ -286,25 +336,23 @@ export class Session {
     }
 
     public xdgOpen(path: string): Result<undefined, string> {
-        const res = this.getParentFromPath(path);
+        const res = this.filenameAndParentFromPath(path);
         if (!res.ok) {
-            return Err(`'${path}': No such file or directory`);
+            return res;
         }
-
         if (res.value.tag === "root") {
-            return Err(`'${path}': Is a directory`);
+            return Err(formatIoError(path, "is_a_directory"));
         }
 
         const { filename, parent } = res.value;
 
         const file = parent.children.get(filename);
         if (file === undefined) {
-            return Err(`'${path}': No such file or directory`);
+            return Err(formatIoError(path, "no_such_file_or_directory"));
         }
         if (file.tag === "dir") {
-            return Err(`'${path}': Is a directory`);
+            return Err(formatIoError(path, "is_a_directory"));
         }
-
         const { content } = file;
         switch (content.tag) {
             case "dynamic": {
@@ -325,9 +373,9 @@ export class Session {
     public listFiles(path?: string): Result<string[], string> {
         let dir = this.cwdDir;
         if (path) {
-            const res = this.getChildFromPath(path);
+            const res = this.nodeFromPath(path);
             if (!res.ok) {
-                return Err(`"${path}": No such file or directory`);
+                return Err(formatIoError(path, "no_such_file_or_directory"));
             }
             const child = res.value;
             if (child.tag === "file") {
@@ -346,82 +394,108 @@ export class Session {
     }
 
     public pwd(): string {
-        return fullDirPathString(this.cwdDir);
+        return absolutePathOfDir(this.cwdDir);
     }
 
-    public cwdString(): string {
+    public formattedCwd(): string {
         const val = this.pwd();
         return val.replace(new RegExp(`^/home/${this.username}`), "~");
     }
 
-    public dirOrFileExists(path: string): boolean {
-        const res = this.getChildFromPath(path);
-        if (!res.ok) {
-            return false;
-        }
-        return true;
-    }
-
-    private getParentFromPath(
+    private filenameAndParentFromPath(
         path: string,
     ): Result<ParentFromPath, string> {
-        const segments = lexPath(path);
-        const filename = segments.pop();
-        if (!filename) {
-            if (path === "/") {
-                return Ok({ tag: "root", root: this.root });
-            }
-            throw new Error("unreachable: path cannot be empty");
+        const pathSegments = this.pathToAbsolutePathSegments(path);
+        const filename = pathSegments.pop();
+        if (filename === undefined) {
+            return Ok({ tag: "root", root: this.root });
         }
-
-        let parent = this.nodeRootFromPath(path);
-        for (const segment of segments) {
-            const res = this.getNodeFromPathSegment(parent, segment);
-            if (!res.ok) {
-                return Err(`${path}: No such file or directory`);
+        let parent: RootDir | Dir = this.root;
+        while (true) {
+            const segment = pathSegments.shift();
+            if (segment === undefined) {
+                break;
             }
-            if (res.value.tag === "file") {
-                return Err(`${path}: Not a directory`);
+            const child: File | Dir | undefined = parent.children.get(
+                segment,
+            );
+            if (child === undefined) {
+                const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                return Err(
+                    formatIoError(childPath, "no_such_file_or_directory"),
+                );
             }
-            parent = res.value;
+            if (child.tag === "file") {
+                const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                return Err(formatIoError(childPath, "not_a_directory"));
+            }
+            parent = child;
         }
-
-        return Ok({ tag: "file", filename, parent });
+        return Ok({ tag: "file", parent, filename });
     }
 
-    private getChildFromPath(
-        path: string,
-    ): Result<Dir | File, string> {
-        const res = this.getParentFromPath(path);
-        if (!res.ok) return res;
-        if (res.value.tag === "root") return Ok(this.root);
-        const { filename, parent } = res.value;
-
-        const child = parent.children.get(filename);
-        if (!child) {
-            return Err(`${path}: No such file or directory`);
+    private nodeFromPath(
+        maybeRelative: string,
+    ): Result<RootDir | Dir | File, string> {
+        const pathSegments = this.pathToAbsolutePathSegments(maybeRelative);
+        let parent: RootDir | Dir = this.root;
+        while (true) {
+            const segment = pathSegments.shift();
+            if (segment === undefined) {
+                break;
+            }
+            const child: File | Dir | undefined = parent.children.get(
+                segment,
+            );
+            if (child === undefined) {
+                const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                return Err(
+                    formatIoError(childPath, "no_such_file_or_directory"),
+                );
+            }
+            if (child.tag === "file") {
+                if (pathSegments.length > 0) {
+                    const childPath = `${absolutePathOfDir(parent)}/${segment}`;
+                    return Err(
+                        formatIoError(childPath, "not_a_directory"),
+                    );
+                }
+                return Ok(child);
+            }
+            parent = child;
         }
-        return Ok(child);
+        return Ok(parent);
     }
 
-    private getNodeFromPathSegment(
-        dir: Dir,
-        segment: string,
-    ): Result<File | Dir, undefined> {
-        if (segment === ".") {
-            return Ok(dir);
+    private pathToAbsolutePathSegments(path: string): string[] {
+        let absPath;
+        if (path.startsWith("/")) {
+            absPath = path;
+        } else if (path === "~" || path.startsWith("~/")) {
+            absPath = path.replace(
+                "~",
+                absolutePathOfDir(this.userDir()),
+            );
+        } else {
+            absPath = absolutePathOfDir(this.cwdDir) + "/" + path;
         }
-        if (segment === "..") {
-            if (!dir.parent) {
-                return Ok(dir);
+
+        const segments = absPath.split("/").filter((v) =>
+            v !== "" && v !== "."
+        );
+        const nodes: string[] = [];
+        while (true) {
+            const seg = segments.shift();
+            if (seg === undefined) {
+                break;
             }
-            return Ok(dir.parent);
+            if (seg === "..") {
+                nodes.pop();
+                continue;
+            }
+            nodes.push(seg);
         }
-        const child = dir.children.get(segment);
-        if (!child) {
-            return Err(undefined);
-        }
-        return Ok(child);
+        return nodes;
     }
 
     private userDir(): Dir {

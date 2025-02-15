@@ -442,7 +442,7 @@ async function main() {
     session.cd(`/home/${username}`);
 
     const ui = new Ui({
-        updatePrompt: (update) => update(session.cwdString()),
+        updatePrompt: (update) => update(session.formattedCwd()),
         keyListener: async (event) =>
             ui.executeActions(await uiKeyEvent(session, event)),
     });
