@@ -1,4 +1,3 @@
-import { bytesToBase64 } from "./bytes.ts";
 import { Err, Ok, Result } from "./results.ts";
 
 export type FileContent =
@@ -115,6 +114,27 @@ function linkDir(
     );
     node.children = children;
     return node;
+}
+
+function openDynamicXdgRequest(filename: string, content: Uint8Array) {
+    const form = document.createElement("form");
+    form.enctype = "multipart/form-data";
+    form.method = "POST";
+    form.action = `/bin/xdg-open/${filename}`;
+    form.target = "_blank";
+    const fileList = new DataTransfer();
+    const file = new File([content], filename);
+    fileList.items.add(file);
+    const fileInput = document.createElement("input");
+    fileInput.name = "data";
+    fileInput.type = "file";
+    fileInput.files = fileList.files;
+    const submit = document.createElement("input");
+    submit.type = "submit";
+    form.append(fileInput, submit);
+    document.body.append(form);
+    form.submit();
+    form.remove();
 }
 
 type IoError =
@@ -323,7 +343,7 @@ export class Session {
         return Ok(undefined);
     }
 
-    public cat(path: string): Result<string, string> {
+    public cat(path: string): Result<Uint8Array, string> {
         const res = this.nodeFromPath(path);
         if (!res.ok) {
             return Err(formatIoError(path, "no_such_file_or_directory"));
@@ -334,9 +354,7 @@ export class Session {
             return Err(formatIoError(path, "is_a_directory"));
         }
 
-        const decoded = new TextDecoder().decode(file.content.data);
-
-        return Ok(decoded);
+        return Ok(file.content.data);
     }
 
     public xdgOpen(path: string): Result<undefined, string> {
@@ -360,15 +378,12 @@ export class Session {
         const { content } = file;
         switch (content.tag) {
             case "dynamic": {
-                open(
-                    `/bin/xdg-open?filename=${
-                        encodeURIComponent(filename)
-                    }&data=${encodeURIComponent(bytesToBase64(content.data))}`,
-                );
+                openDynamicXdgRequest(filename, content.data);
                 return Ok(undefined);
             }
             case "static": {
                 open(content.url);
+
                 return Ok(undefined);
             }
         }

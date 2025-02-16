@@ -47,13 +47,13 @@ function serveDist(addr: Addr) {
         port: addr.port,
         hostname: addr.hostname,
         onListen: (_) => listening(addr),
-    }, (req: Request) => {
+    }, async (req: Request) => {
         const url = new URL(req.url);
         if (url.pathname.startsWith("/bin/xdg-open")) {
-            return serveXdgOpenRequest(req);
+            return await serveXdgOpenRequest(req);
         }
         if (url.pathname.startsWith("/bin/wget")) {
-            return serveWgetRequest(req);
+            return await serveWgetRequest(req);
         }
         return serveDir(req, {
             fsRoot: "dist",
