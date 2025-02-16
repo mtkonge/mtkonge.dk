@@ -2,6 +2,15 @@ import { mime } from "https://deno.land/x/mimetypes@v1.0.0/mod.ts";
 import { serveDir } from "jsr:@std/http/file-server";
 import * as path from "jsr:@std/path";
 
+export function listening(addr: Addr) {
+    console.log(`Listening on http://${addr.hostname}:${addr.port}/`);
+}
+
+export type Addr = {
+    hostname: string;
+    port: number;
+};
+
 async function responseFromFile(
     data: File,
 ): Promise<Response> {
@@ -14,7 +23,7 @@ async function responseFromFile(
     return await data.bytes().then((data) => new Response(data, { headers }));
 }
 
-export async function serveXdgOpenRequest(req: Request): Promise<Response> {
+async function serveXdgOpenRequest(req: Request): Promise<Response> {
     const body = await req.formData();
     const data = body.get("data");
     if (data === null) {
@@ -26,15 +35,19 @@ export async function serveXdgOpenRequest(req: Request): Promise<Response> {
     return await responseFromFile(data);
 }
 
-export async function serveWgetRequest(req: Request): Promise<Response> {
+async function serveWgetRequest(req: Request): Promise<Response> {
     const reqUrl = new URL(req.url);
     const params = reqUrl.searchParams;
     const target = new URL(params.get("url") ?? "");
     return await fetch(target);
 }
 
-function main() {
-    Deno.serve({ port: 5823 }, async (req: Request) => {
+export function serveBinAndDist(addr: Addr) {
+    Deno.serve({
+        port: addr.port,
+        hostname: addr.hostname,
+        onListen: (_) => listening(addr),
+    }, async (req: Request) => {
         const url = new URL(req.url);
         if (url.pathname.startsWith("/bin/xdg-open")) {
             return await serveXdgOpenRequest(req);
@@ -51,5 +64,5 @@ function main() {
 }
 
 if (import.meta.main) {
-    main();
+    serveBinAndDist({ port: 5812, hostname: "0.0.0.0" });
 }
