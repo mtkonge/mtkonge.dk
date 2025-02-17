@@ -1,4 +1,4 @@
-import { concatBytes, stringToBytes } from "./bytes.ts";
+import { bytesToText, concatBytes, textToBytes } from "./bytes.ts";
 import {
     assertMotdIncludesCmd,
     rawCmdIsCmd,
@@ -187,7 +187,7 @@ async function uiKeyEvent(
         if (output.redirects.length === 0) {
             actions.push({
                 tag: "add_history_item",
-                output: res.value.content,
+                output: bytesToText(res.value.content),
             });
         } else {
             for (const redirect of output.redirects) {
@@ -204,14 +204,14 @@ async function uiKeyEvent(
                 if (redirect.tag === "write") {
                     file.content = {
                         tag: "dynamic",
-                        data: stringToBytes(output.content),
+                        data: output.content,
                     };
                 } else if (redirect.tag === "append") {
                     file.content = {
                         tag: "dynamic",
                         data: concatBytes(
                             file.content.data,
-                            new TextEncoder().encode(output.content),
+                            output.content,
                         ),
                     };
                 }
@@ -235,7 +235,7 @@ type MetaCmds = {
 };
 
 type Output =
-    | { tag: "cmd"; redirects: Redirect[]; content: string }
+    | { tag: "cmd"; redirects: Redirect[]; content: Uint8Array }
     | { tag: "empty_cmd" };
 
 type WgetOutput =
@@ -314,7 +314,11 @@ async function runCommand(
     }
     switch (cmd.bin) {
         case "pwd":
-            return Ok({ tag: "cmd", redirects, content: session.pwd() });
+            return Ok({
+                tag: "cmd",
+                redirects,
+                content: textToBytes(session.pwd()),
+            });
         case "cd": {
             if (cmd.arguments.length > 1) {
                 return Err("cd: too many arguments");
@@ -325,7 +329,7 @@ async function runCommand(
                 return Err(`cd: ${res.error}`);
             }
 
-            return Ok({ tag: "cmd", redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: textToBytes("") });
         }
         case "rm": {
             if (cmd.arguments.length === 0) {
@@ -343,7 +347,7 @@ async function runCommand(
                 }
             }
 
-            return Ok({ tag: "cmd", redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: textToBytes("") });
         }
         case "mkdir": {
             if (cmd.arguments.length === 0) {
@@ -360,7 +364,7 @@ async function runCommand(
                 }
             }
 
-            return Ok({ tag: "cmd", redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: textToBytes("") });
         }
         case "ls": {
             const showAll = cmd.short_options.includes("a") ||
@@ -370,14 +374,16 @@ async function runCommand(
                 ? [session.listFiles()]
                 : cmd.arguments.map((arg) => session.listFiles(arg));
 
-            const content = res
-                .map((v) =>
-                    v.ok
-                        ? v.value
-                            .filter((v) => showAll || !v.startsWith("."))
-                            .join("\n")
-                        : v.error
-                ).join("\n");
+            const content = textToBytes(
+                res
+                    .map((v) =>
+                        v.ok
+                            ? v.value
+                                .filter((v) => showAll || !v.startsWith("."))
+                                .join("\n")
+                            : v.error
+                    ).join("\n"),
+            );
             return Ok({ tag: "cmd", redirects, content });
         }
         case "touch": {
@@ -387,7 +393,7 @@ async function runCommand(
             for (const file of cmd.arguments) {
                 session.touch(file);
             }
-            return Ok({ tag: "cmd", redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: textToBytes("") });
         }
         case "cat": {
             if (cmd.arguments.length === 0) {
@@ -395,29 +401,28 @@ async function runCommand(
             }
             const content = cmd.arguments
                 .map((v) => session.cat(v))
-                .map((r) => r.ok ? r.value : `cat: ${r.error}`)
-                .join("\n");
+                .map((r) => r.ok ? r.value : textToBytes(`cat: ${r.error}`))
+                .reduce((acc, v) => concatBytes(acc, textToBytes("\n"), v));
             return Ok({ tag: "cmd", content, redirects });
         }
         case "echo": {
-            if (cmd.arguments.length === 0) {
-                return Ok({ tag: "cmd", redirects, content: "\n" });
-            }
             return Ok({
                 tag: "cmd",
                 redirects,
-                content: cmd.arguments.join(" ") + "\n",
+                content: textToBytes(cmd.arguments.join(" ") + "\n"),
             });
         }
         case "xdg-open": {
             if (cmd.arguments.length === 0) {
                 return Err("xdg-open: missing file operand");
             }
-            const content = cmd.arguments
-                .map((v) => session.xdgOpen(v))
-                .map((r) => r.ok ? null : `xdg-open: ${r.error}`)
-                .filter((v) => v !== null)
-                .join("\n");
+            const content = textToBytes(
+                cmd.arguments
+                    .map((v) => session.xdgOpen(v))
+                    .map((r) => r.ok ? null : `xdg-open: ${r.error}`)
+                    .filter((v) => v !== null)
+                    .join("\n"),
+            );
             return Ok({ tag: "cmd", redirects, content });
         }
         case "wget": {
@@ -426,12 +431,14 @@ async function runCommand(
             }
             const content = await Promise.all(
                 cmd.arguments.map((url) => wget(session, url)),
-            ).then((response) => response.map((v) => v.message).join("\n"));
+            )
+                .then((response) => response.map((v) => v.message).join("\n"))
+                .then(textToBytes);
             return Ok({ tag: "cmd", redirects, content });
         }
         case "clear": {
             metaCmds.clear?.();
-            return Ok({ tag: "cmd", redirects, content: "" });
+            return Ok({ tag: "cmd", redirects, content: textToBytes("") });
         }
     }
 }
@@ -460,7 +467,7 @@ async function main() {
 
     ui.executeActions([
         { tag: "set_input_value", value: catCmd },
-        { tag: "add_history_item", output: catOutput },
+        { tag: "add_history_item", output: bytesToText(catOutput) },
         { tag: "clear_input" },
     ]);
 }
