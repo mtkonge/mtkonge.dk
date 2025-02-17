@@ -1,5 +1,5 @@
-export function stringToBytes(value: string): Uint8Array {
-    return new TextEncoder().encode(value);
+export function textToBytes(text: string): Uint8Array {
+    return new TextEncoder().encode(text);
 }
 
 export function concatBytes(...arrays: Uint8Array[]): Uint8Array {
@@ -19,9 +19,6 @@ export function concatBytes(...arrays: Uint8Array[]): Uint8Array {
     return result;
 }
 
-export function bytesToBase64(bytes: Uint8Array): string {
-    const binStr = Array
-        .from(bytes, (byte) => String.fromCodePoint(byte))
-        .join("");
-    return btoa(binStr);
+export function bytesToText(bytes: Uint8Array): string {
+    return new TextDecoder().decode(bytes);
 }
