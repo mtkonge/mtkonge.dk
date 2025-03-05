@@ -1,7 +1,21 @@
-import { fetchFile, initialChildren, InitialRootDir } from "./file_system.ts";
+import {
+    fetchFile,
+    initialChildren,
+    InitialFile,
+    InitialRootDir,
+} from "./file_system.ts";
+
+async function file(name: string): Promise<InitialFile> {
+    return {
+        tag: "file",
+        name,
+        content: await fetchFile(name),
+    };
+}
 
 export async function root(username: string): Promise<InitialRootDir> {
     const motd = "motd.txt";
+    const webring = "webring.txt";
     const root: InitialRootDir = {
         tag: "root_dir",
         children: initialChildren({
@@ -13,11 +27,8 @@ export async function root(username: string): Promise<InitialRootDir> {
                         tag: "dir",
                         name: username,
                         children: initialChildren({
-                            [motd]: {
-                                tag: "file",
-                                name: motd,
-                                content: await fetchFile(motd),
-                            },
+                            [motd]: await file(motd),
+                            [webring]: await file(webring),
                         }),
                     },
                 }),
