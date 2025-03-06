@@ -34,6 +34,7 @@ body {
 
 #input-wrapper {
     position: relative;
+    white-space: pre-wrap;
 }
 
 #terminal-input {
@@ -79,5 +80,5 @@ body {
 }
 
 #input-wrapper input:not(:focus) + label #terminal-input-cursor {
-    /* display: none; */
+    display: none;
 }
