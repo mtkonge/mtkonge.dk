@@ -23,7 +23,7 @@ export class Ui {
     private input = document.querySelector<HTMLInputElement>(
         "#terminal-input",
     )!;
-    private userPrefix = document.querySelector<HTMLDivElement>("#user")!;
+    private userPrefix = document.querySelector<HTMLSpanElement>("#user")!;
 
     constructor({ keyListener }: UiConfig) {
         this.input.addEventListener(
@@ -49,9 +49,10 @@ export class Ui {
     private addHistoryItem(output: string) {
         const userPrefixClone = this.userPrefix.cloneNode(
             true,
-        ) as HTMLDivElement;
+        ) as HTMLSpanElement;
 
-        const command = document.createElement("div");
+        const command = document.createElement("span");
+        command.classList.add("user-command");
         command.textContent = this.input.value;
 
         const userAndCommand = document.createElement("div");
@@ -68,7 +69,7 @@ export class Ui {
         historyItem.append(userAndCommand, outputElement);
 
         for (const descendant of historyItem.querySelectorAll("[id]")) {
-            descendant.id = "";
+            descendant.removeAttribute("id");
         }
 
         this.history.appendChild(historyItem);
@@ -101,9 +102,15 @@ export class Ui {
     }
 
     private updateInputAndCursor() {
+        const promptPrefix = document.querySelector("#user")?.textContent;
+        if (!promptPrefix) {
+            throw new Error("unreachable: defined in index.html");
+        }
+
         const termContent = document.querySelector("#terminal-input-content");
         if (!termContent) throw new Error("unreachable: defined in index.html");
-        termContent.textContent = this.input.value;
+        const cursorSpace = " ";
+        termContent.textContent = this.input.value + cursorSpace;
         const cursorPadding = document.querySelector(
             "#terminal-input-cursor-padding",
         );
@@ -114,7 +121,7 @@ export class Ui {
             0,
             this.input.selectionStart ?? this.input.value.length,
         );
-        cursorPadding.textContent = contentUntilSelection;
+        cursorPadding.textContent = promptPrefix + contentUntilSelection;
         const cursorSelection = document.querySelector(
             "#terminal-input-cursor-selection",
         );

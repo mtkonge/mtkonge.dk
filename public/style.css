@@ -1,7 +1,4 @@
 * {
-    margin: 0;
-    font-size: 20px;
-    font-family: "Ubuntu Mono", monospace;
     -ms-overflow-style: none; /* IE and Edge */
     scrollbar-width: none; /* Firefox */
 }
@@ -10,85 +7,17 @@
     display: none;
 }
 
-span, .history-list {
-    white-space: pre; /*enable whitespace*/
-}
-
 body {
+    font-family: "Ubuntu Mono", monospace;
     background-color: #222228;
     color: #f5f5f5;
-}
-
-#input-wrapper {
-    display: flex;
-    font-size: 0;
-    margin-left: 8px;
-}
-
-.user-and-command {
-    display: flex;
-}
-
-#history {
-    display: flex;
-    flex-direction: column;
-    margin-left: 8px;
-}
-
-.history-item {
-    display: flex;
+    font-size: 1.25rem;
+    margin: 0 0.5rem;
+    word-break: break-all;
 }
 
 .user-prefix {
-    display: flex;
-}
-
-#input-wrapper #terminal-input {
-    padding: 0;
-    margin: 0;
-    width: 0;
-    height: 0;
-    border: none;
-    opacity: 0;
-}
-
-#input-wrapper #terminal-input-label {
-    position: relative;
-    text-decoration: none;
-    border: none;
-    background-color: transparent;
-    outline: none;
-    color: #f5f5f5;
-    caret-color: transparent;
-    width: 100%;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    padding: 0;
-}
-
-#input-wrapper #terminal-input-cursor {
-    left: 0;
-    position: absolute;
-}
-
-#input-wrapper #terminal-input-cursor-padding {
-    opacity: 0;
-}
-
-#input-wrapper #terminal-input-cursor-selection {
-    font-weight: bold;
-    animation: blink 1s step-start infinite;
-}
-
-#input-wrapper #terminal-input-cursor-selection.block {
-    font-weight: normal;
-    background-color: #f5f5f5;
-    color: #222228;
-}
-
-#input-wrapper input:not(:focus) + label #terminal-input-cursor {
-    display: none;
+    white-space: pre;
 }
 
 .user {
@@ -97,6 +26,38 @@ body {
 
 .dir {
     color: #4488ff;
+}
+
+.history-list {
+    white-space: pre-wrap;
+}
+
+#input-wrapper {
+    position: relative;
+}
+
+#terminal-input {
+    padding: 0;
+    margin: 0;
+    width: 0;
+    height: 0;
+    border: none;
+    opacity: 0;
+}
+
+#terminal-input-cursor {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+#terminal-input-cursor-padding {
+    opacity: 0;
+}
+
+#terminal-input-cursor-selection {
+    font-weight: bold;
+    animation: blink 1s step-start infinite;
 }
 
 @keyframes blink {
@@ -109,4 +70,14 @@ body {
     100% {
         opacity: 1;
     }
+}
+
+#terminal-input-cursor-selection.block {
+    font-weight: normal;
+    background-color: #f5f5f5;
+    color: #222228;
+}
+
+#input-wrapper input:not(:focus) + label #terminal-input-cursor {
+    /* display: none; */
 }

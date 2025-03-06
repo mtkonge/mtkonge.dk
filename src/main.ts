@@ -443,8 +443,40 @@ async function runCommand(
     }
 }
 
+function cullWhitespaceNodes(...ids: string[]) {
+    const targets = [...ids];
+    for (const id of targets) {
+        const element = document.getElementById(id);
+        if (!element) {
+            throw new Error(
+                `unreachable: element with id '${id}' is defined in index.html`,
+            );
+        }
+        for (const node of element.childNodes) {
+            if (node.nodeType !== node.TEXT_NODE) {
+                continue;
+            }
+            const text = node.textContent;
+            if (!text) {
+                throw new Error(
+                    "unreachable: text node always has text content",
+                );
+            }
+            if (text.trim().length !== 0) {
+                continue;
+            }
+            node.remove();
+        }
+    }
+}
+
 async function main() {
     await assertMotdIncludesCmd();
+    cullWhitespaceNodes(
+        "input-wrapper",
+        "user",
+        "terminal-input-label",
+    );
 
     const session = new Session(await root(username), username);
     session.cd(`/home/${username}`);
